@@ -45,6 +45,47 @@ class PackageLayoutContractTests(unittest.TestCase):
         makefile = makefile_path.read_text()
         self.assertRegex(makefile, r"(?m)^\s*DEPENDS.*ookla-speedtest-cli")
 
+    def test_makefile_defines_all_binary_package_outputs_without_downloads(self):
+        makefile = (PACKAGE / "Makefile").read_text()
+        for package_name in (
+            "ookla-speedtest-webd",
+            "luci-app-ookla-speedtest-web",
+            "gl-app-ookla-speedtest-web",
+        ):
+            self.assertIn("Package/" + package_name, makefile)
+        self.assertRegex(makefile, r"PKG_VERSION\s*:=")
+        self.assertRegex(makefile, r"PKG_RELEASE\s*:=")
+        self.assertRegex(makefile, r"PKGARCH\s*:=\s*all")
+        self.assertNotRegex(makefile, r"(?i)(wget|curl|https?://|Build/Compile.*download)")
+
+    def test_package_metadata_and_modes(self):
+        controls = {
+            "ookla-speedtest-webd": ("ookla-speedtest-cli",),
+            "luci-app-ookla-speedtest-web": ("ookla-speedtest-webd", "luci-base", "rpcd"),
+            "gl-app-ookla-speedtest-web": ("ookla-speedtest-webd",),
+        }
+        for name, deps in controls.items():
+            control = PACKAGE / name / "CONTROL/control"
+            self.assertTrue(control.is_file(), control)
+            text = control.read_text()
+            self.assertIn("Package: " + name, text)
+            self.assertIn("Version: 1.0.0", text)
+            for dep in deps:
+                self.assertRegex(text, rf"(?im)^Depends:.*\b{dep}\b")
+        self.assertTrue((PACKAGE / "ookla-speedtest-webd/CONTROL/conffiles").is_file())
+        for relative in (
+            "ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd",
+            "ookla-speedtest-webd/etc/init.d/ookla-speedtest-webd",
+            "luci-app-ookla-speedtest-web/usr/libexec/rpcd/ookla-speedtest-web",
+        ):
+            self.assertTrue((PACKAGE / relative).stat().st_mode & 0o111, relative)
+
+    def test_install_rules_exclude_control_metadata_and_luci_runtime_deps(self):
+        makefile = (PACKAGE / "Makefile").read_text()
+        self.assertNotRegex(makefile, r"\$\(CP\) \./(?:ookla-speedtest-webd|luci-app-ookla-speedtest-web|gl-app-ookla-speedtest-web)/\* \$\(1\)/")
+        self.assertRegex(makefile, r"Package/luci-app-ookla-speedtest-web[\s\S]*DEPENDS:=.*\+luci-base")
+        self.assertRegex(makefile, r"Package/luci-app-ookla-speedtest-web[\s\S]*DEPENDS:=.*\+rpcd")
+
     def test_package_does_not_vendor_binary_archive_key_or_http_daemon(self):
         package_path = PACKAGE / "ookla-speedtest-webd"
         self.assertTrue(package_path.is_dir(), package_path)
