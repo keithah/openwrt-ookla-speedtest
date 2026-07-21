@@ -99,8 +99,8 @@ Add both repositories to an OpenWrt source tree, select the web packages in
 `make menuconfig`, and build:
 
 ```sh
-git clone https://github.com/keithah/openwrt-ookla-speedtest-web.git \
-  package/openwrt-ookla-speedtest-web
+git clone https://github.com/keithah/openwrt-ookla-speedtest.git \
+  package/openwrt-ookla-speedtest
 git clone https://github.com/keithah/openwrt-ookla-speedtest-cli.git \
   package/openwrt-ookla-speedtest-cli
 make menuconfig
