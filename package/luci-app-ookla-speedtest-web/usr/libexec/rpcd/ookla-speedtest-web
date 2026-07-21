@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import json, os, sys, subprocess
-methods=('status','servers','start','history','delete_history','clear_history','settings')
+methods=('status','servers','start','history','delete_history','clear_history','settings','accept_terms')
 if len(sys.argv)>1 and sys.argv[1]=='list':
  print(json.dumps({'ookla-speedtest-web':{m:[] for m in methods}})); raise SystemExit
 if len(sys.argv)>1 and sys.argv[1]=='call':

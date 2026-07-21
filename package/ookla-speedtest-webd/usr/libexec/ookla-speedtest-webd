@@ -33,6 +33,7 @@ def unlock(x):
   try: os.rmdir(d)
   except: pass
 statefile=os.path.join(run,'state.json')
+termsfile=os.path.join(run,'terms-accepted')
 servercachefile=os.path.join(run,'servers-cache.json')
 _servers_cache=None; _servers_cache_at=0
 def atomic_write(path,data):
@@ -48,6 +49,7 @@ def atomic_write(path,data):
   except OSError: pass
   raise
 def writestate(s): atomic_write(statefile,json.dumps(s,separators=(',',':')))
+def terms_accepted(): return os.path.exists(termsfile)
 def writehist(items):
  atomic_write(hist,''.join(json.dumps(x,separators=(',',':'))+'\n' for x in items))
 def readhist():
@@ -86,6 +88,9 @@ def main(req):
    writehist(items); return {'ok':True}
   finally: unlock(lk)
  if m=='settings': return {'ok':True,'retention':retention()}
+ if m=='accept_terms':
+  try: atomic_write(termsfile,'accepted\n'); return {'ok':True}
+  except Exception: return {'ok':False,'error':{'code':'storage_error'}}
  if m=='servers':
   global _servers_cache,_servers_cache_at
   try:
@@ -104,6 +109,7 @@ def main(req):
  if m!='start': return {'ok':False,'error':{'code':'unknown_method'}}
  sid=req.get('server_id')
  if sid is not None and (not re.fullmatch(r'[0-9]+',str(sid)) or int(sid)<0): return {'ok':False,'error':{'code':'invalid_server_id'}}
+ if not terms_accepted(): return {'ok':False,'error':{'code':'terms_required','message':'Ookla Terms and Privacy Policy acceptance is required'}}
  lk=lock()
  if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
  if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}

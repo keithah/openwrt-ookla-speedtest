@@ -1,6 +1,6 @@
-# Ookla Speedtest Web for OpenWrt
+# Unofficial Ookla Speedtest Web for OpenWrt
 
-Run an Ookla Speedtest from your router and view the result in a native
+This is an unofficial community package. Run an Ookla Speedtest from your router and view the result in a native
 LuCI or GL.iNet Applications experience. The test is explicitly labeled
 **router → internet**: the measurements describe the path from the router,
 not the phone or computer displaying the page.
@@ -49,6 +49,14 @@ service. The service launches `/usr/bin/speedtest` on the router, parses the
 JSON result, stores a bounded history, and returns the result to the view.
 LuCI and GL.iNet use the same frontend and service, so the results and behavior
 are consistent between both views.
+
+### First launch and Ookla terms
+
+The first attempt to run a test presents Ookla’s Terms of Use and Privacy
+Policy agreement. A test cannot start until the agreement is explicitly
+accepted. The choice is stored on the router so the prompt does not reappear
+on every test; it can be cleared by removing the service state if a new
+acceptance is needed.
 
 The server picker passes the selected Ookla server ID to the router-side test.
 If no server is selected, Ookla chooses the best available server.

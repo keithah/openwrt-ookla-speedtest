@@ -3,7 +3,7 @@
 'require rpc';
 'require ui';
 var call = {};
-['status','servers','start','history','delete_history','clear_history','settings'].forEach(function (method) {
+['status','servers','start','history','delete_history','clear_history','settings','accept_terms'].forEach(function (method) {
  call[method] = rpc.declare({ object: 'ookla-speedtest-web', method: method, params: method === 'start' ? ['server_id'] : (method === 'delete_history' ? ['id'] : []) });
 });
 call.runTest = function (params) { return call.start(params || {}); };
