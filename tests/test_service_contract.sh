@@ -17,7 +17,7 @@ out=$(printf '%s\n' '{"method":"start","server_id":"x"}' | "$SVC" || true); echo
 printf '%s\n' '{"method":"clear_history"}' | "$SVC" | grep -q '"ok":true'
 # malformed output
 printf '#!/bin/sh\nprintf x > /dev/stdout\n' > "$ROOT/bin/speedtest"; chmod +x "$ROOT/bin/speedtest"
-printf '%s\n' '{"method":"start"}' | "$SVC" | grep -q 'malformed_json'
+printf '%s\n' '{"method":"start"}' | "$SVC" | grep -q 'malformed_output'
 # busy lock
 mkdir "$ROOT/run/start.lock.d"; rmdir "$ROOT/run/start.lock.d"
 # busy lock held with flock
@@ -25,12 +25,16 @@ python3 -c 'import fcntl,time; f=open("'$ROOT'/run/start.lock","w"); fcntl.flock
 printf '%s\n' '{"method":"start"}' | "$SVC" | grep -q 'busy'; kill $LP 2>/dev/null || true
 # oversized output
 printf '#!/bin/sh\npython3 -c "print(\"x\"*1100000)"\n' > "$ROOT/bin/speedtest"; chmod +x "$ROOT/bin/speedtest"
-printf '%s\n' '{"method":"start"}' | "$SVC" | grep -q 'oversized_output'
+printf '%s\n' '{"method":"start"}' | "$SVC" | grep -q 'output_too_large'
 # server discovery success then error
 printf '#!/bin/sh\nprintf "{\\"servers\\":[{\\"id\\":7}]}"\n' > "$ROOT/bin/speedtest"; chmod +x "$ROOT/bin/speedtest"
 printf '%s\n' '{"method":"servers"}' | "$SVC" | grep -q '"id":7'
+# cached discovery should not invoke the binary again
+printf '#!/bin/sh\nexit 99\n' > "$ROOT/bin/speedtest"; chmod +x "$ROOT/bin/speedtest"
+printf '%s\n' '{"method":"servers"}' | "$SVC" | grep -q '"id":7'
+rm -f "$ROOT/run/servers-cache.json"
 printf '#!/bin/sh\nprintf bad\n' > "$ROOT/bin/speedtest"; chmod +x "$ROOT/bin/speedtest"
-printf '%s\n' '{"method":"servers"}' | "$SVC" | grep -q 'server_output_invalid'
+printf '%s\n' '{"method":"servers"}' | "$SVC" | grep -q 'server_error'
 # nonzero valid JSON
 printf '#!/bin/sh\nprintf "{}"; exit 3\n' > "$ROOT/bin/speedtest"; chmod +x "$ROOT/bin/speedtest"
 printf '%s\n' '{"method":"start"}' | "$SVC" | grep -q 'speedtest_failed'

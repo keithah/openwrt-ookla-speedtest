@@ -33,6 +33,7 @@ def unlock(x):
   try: os.rmdir(d)
   except: pass
 statefile=os.path.join(run,'state.json')
+servercachefile=os.path.join(run,'servers-cache.json')
 _servers_cache=None; _servers_cache_at=0
 def atomic_write(path,data):
  d=os.path.dirname(path) or '.'; fd,tmp=tempfile.mkstemp(prefix='.tmp-',dir=d)
@@ -71,6 +72,10 @@ def main(req):
  if m=='settings': return {'ok':True,'retention':retention()}
  if m=='servers':
   global _servers_cache,_servers_cache_at
+  try:
+   c=json.load(open(servercachefile))
+   if time.time()-float(c.get('timestamp',0)) < 30 and isinstance(c.get('servers'),list): return {'ok':True,'servers':c['servers']}
+  except Exception: pass
   if _servers_cache is not None and time.time()-_servers_cache_at < 30: return {'ok':True,'servers':_servers_cache}
   try:
    with tempfile.TemporaryFile() as tf:
@@ -78,8 +83,8 @@ def main(req):
    if p.returncode or len(raw)>maxout: raise ValueError('server_output_invalid')
    data=json.loads(raw); rows=data.get('servers',data if isinstance(data,list) else [])
    _servers_cache=[{'id':r.get('id'),'name':r.get('name') or r.get('sponsor'),'host':r.get('host'),'port':r.get('port'),'lat':r.get('lat'),'lon':r.get('lon')} for r in rows if isinstance(r,dict)]
-   _servers_cache_at=time.time(); return {'ok':True,'servers':_servers_cache}
-  except Exception as e: return {'ok':False,'error':{'code':'malformed_output'}}
+   _servers_cache_at=time.time(); atomic_write(servercachefile,json.dumps({'timestamp':_servers_cache_at,'servers':_servers_cache},separators=(',',':'))); return {'ok':True,'servers':_servers_cache}
+  except Exception as e: return {'ok':False,'error':{'code':'server_error'}}
  if m!='start': return {'ok':False,'error':{'code':'unknown_method'}}
  sid=req.get('server_id')
  if sid is not None and (not re.fullmatch(r'[0-9]+',str(sid)) or int(sid)<0): return {'ok':False,'error':{'code':'invalid_server_id'}}
