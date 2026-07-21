@@ -88,3 +88,15 @@ governed by Ookla's EULA.
 This project is not affiliated with, endorsed by, or sponsored by Ookla.
 Speedtest and Ookla are trademarks of their respective owners. The package is
 maintained by Keith Herrington.
+
+## Speedtest web interface
+
+The optional `ookla-speedtest-web` package adds a LuCI and GL.iNet web
+interface around the CLI package. On a local router, open LuCI at:
+
+```
+http://router/cgi-bin/luci/admin/services/ookla-speedtest-web
+```
+
+On GL.iNet firmware, launch it from **Applications**. Devices enrolled in
+GoodCloud can use **Remote Web Access** to reach the same application remotely.

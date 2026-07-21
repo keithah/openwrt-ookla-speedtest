@@ -1,0 +1,13 @@
+{
+  "type": "result",
+  "timestamp": "2026-07-21T14:32:10Z",
+  "ping": {"jitter": 0.42, "latency": 8.73, "low": 7.91, "high": 9.61},
+  "download": {"bandwidth": 125000000, "bytes": 1500000000, "elapsed": 12000},
+  "upload": {"bandwidth": 25000000, "bytes": 300000000, "elapsed": 10000},
+  "server": {"id": 12345, "name": "Example Server", "location": "Seattle, WA", "country": "United States", "host": "speed.example.test", "port": 8080, "ip": "192.0.2.10"},
+  "isp": "Example ISP",
+  "interface": {"internalIp": "192.0.2.2", "name": "eth0", "macAddr": "00:11:22:33:44:55", "isVpn": false, "externalIp": "198.51.100.2",
+    "linkSpeed": 1000, "metered": false},
+  "packetLoss": 0,
+  "result": {"id": "example-result-id", "url": "https://www.speedtest.net/result/example-result-id", "persisted": true}
+}
