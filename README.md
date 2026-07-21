@@ -99,4 +99,13 @@ http://router/cgi-bin/luci/admin/services/ookla-speedtest-web
 ```
 
 On GL.iNet firmware, launch it from **Applications**. Devices enrolled in
-GoodCloud can use **Remote Web Access** to reach the same application remotely.
+GoodCloud must have **Remote Web Access** enabled in the router's GoodCloud
+settings; after authenticating to GoodCloud, open the Ookla Speedtest
+application there. This authenticated remote path reuses the same LuCI route:
+
+```
+http://router/cgi-bin/luci/admin/services/ookla-speedtest-web
+```
+
+The package does not add a custom port, public HTTP listener, or separate
+credential flow. All requests use the router's existing LuCI/GL.iNet session.
