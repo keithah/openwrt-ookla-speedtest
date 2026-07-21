@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-version="1.0.1"
+version="1.1.0"
 base="https://github.com/keithah/openwrt-ookla-speedtest-web/releases/download/v${version}"
 
 command -v opkg >/dev/null 2>&1 || {

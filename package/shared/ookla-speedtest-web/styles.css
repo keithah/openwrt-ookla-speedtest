@@ -1,1 +1,27 @@
-:root{font-family:system-ui,sans-serif;color:#eaf7ff;background:#071827}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% 35%,#123653,#071827 65%);min-height:100vh}#app{max-width:900px;margin:auto;padding:24px}header{display:flex;justify-content:space-between;align-items:center}.brand{font-weight:700;letter-spacing:.2em;color:#fff}nav button,.server button{background:none;border:0;color:#b8cede;padding:10px;cursor:pointer}nav button:hover{color:#5de5ff}.hero{text-align:center;padding:8vh 0 4vh}.route{display:flex;justify-content:center;gap:14px;color:#79a6bd;font-size:.75rem;letter-spacing:.2em}.go{margin:36px auto 16px;width:180px;height:180px;border-radius:50%;border:8px solid #48e2ff;background:#0a2438;color:#fff;font-size:2.5rem;font-weight:700;box-shadow:0 0 35px #37d8ff66;cursor:pointer}.go:focus{outline:3px solid #fff;outline-offset:5px}.meta{display:flex;justify-content:center;gap:8px}.meta span{border:1px solid #31536c;border-radius:99px;padding:5px 12px;font-size:.75rem}.server{margin:32px auto 0;max-width:420px;display:flex;justify-content:space-between;text-align:left;border-top:1px solid #25455b;padding-top:16px}.server small,.server span{display:block;color:#85a5b8;font-size:.72rem}.server strong{display:block;font-size:1.2rem}#view{margin-top:20px}table{width:100%;border-collapse:collapse}td{padding:10px;border-bottom:1px solid #25455b}@media(max-width:600px){#app{padding:16px}header{align-items:flex-start;gap:8px}nav{display:flex;flex-wrap:wrap;justify-content:flex-end}.go{width:150px;height:150px}}
+:root{font-family:system-ui,sans-serif;color:#eaf7ff;background:#071827;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at 50% 35%,#123653,#071827 65%);min-height:100vh}
+button,input{font:inherit}
+#app{max-width:960px;margin:auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center}
+.brand{font-weight:700;letter-spacing:.2em;color:#fff}.brand small{font-size:.55rem;color:#79a6bd}
+nav button,.server button,.mode-picker button,#server-results button{background:none;border:0;color:#b8cede;padding:10px;cursor:pointer}
+nav button:hover,.server button:hover{color:#5de5ff}
+.hero{text-align:center;padding:5vh 0 3vh}
+.mode-picker{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-bottom:28px}
+.mode-picker button{border:1px solid #31536c;border-radius:99px;padding:8px 14px}
+.mode-picker button.active{color:#071827;background:#48e2ff;border-color:#48e2ff;font-weight:700}
+.route{color:#79a6bd;font-size:.75rem;letter-spacing:.2em}
+.go{margin:30px auto 16px;width:180px;height:180px;border-radius:50%;border:8px solid #48e2ff;background:#0a2438;color:#fff;font-size:2.5rem;font-weight:700;box-shadow:0 0 35px #37d8ff66;cursor:pointer}
+.go:focus{outline:3px solid #fff;outline-offset:5px}
+.scope-note,.vpn-callout{color:#9fb8c7;font-size:.9rem}
+.meta{display:flex;justify-content:center;gap:8px}.meta span{border:1px solid #31536c;border-radius:99px;padding:5px 12px;font-size:.75rem}
+.server{margin:32px auto 0;max-width:500px;display:flex;justify-content:space-between;text-align:left;border-top:1px solid #25455b;padding-top:16px}
+.server small,.server span{display:block;color:#85a5b8;font-size:.72rem}.server strong{display:block;font-size:1.2rem}
+.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:10px 0 30px}
+.result-card{background:#0b263a;border:1px solid #254f69;border-radius:16px;padding:22px;box-shadow:0 14px 30px #00101b55}
+.result-card h2{font-size:1rem;color:#72def4;margin-top:0}.result-card p{font-size:1.35rem;margin:.65rem 0}.result-card small{color:#9fb8c7}
+#view{margin-top:20px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px;border-bottom:1px solid #25455b}
+#server-panel{max-width:500px;margin:20px auto;padding:16px;background:#0b263a;border-radius:12px}#server-search{width:100%;padding:10px}#server-results button{display:block;width:100%;text-align:left}
+dialog{max-width:540px;border:1px solid #31536c;border-radius:16px;background:#0b263a;color:#eaf7ff;padding:24px}dialog::backdrop{background:#00101bcc}dialog form{display:flex;justify-content:flex-end;gap:10px}dialog button{padding:9px 14px}
+@media(max-width:600px){#app{padding:16px}header{align-items:flex-start;gap:8px}nav{display:flex;flex-wrap:wrap;justify-content:flex-end}.go{width:150px;height:150px}.results{grid-template-columns:1fr}table{font-size:.8rem}}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build deterministic repository-only IPKs for the three web packages."""
-import io, os, tarfile, tempfile, gzip
+import io, os, tarfile, tempfile, gzip, shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,17 +23,27 @@ def build(name, version, release, outdir):
     ctl = (control / "control").read_text()
     ctl = __import__('re').sub(r"^Version:.*$", f"Version: {version}-{release}", ctl, flags=__import__('re').M).encode()
     cfiles = [control / "control"] + ([control / "conffiles"] if (control / "conffiles").exists() else [])
-    with tempfile.NamedTemporaryFile() as generated:
+    with tempfile.NamedTemporaryFile() as generated, tempfile.TemporaryDirectory() as staged:
         generated.write(ctl); generated.flush(); cfiles[0] = Path(generated.name)
-        _build(name, version, release, outdir, root, cfiles, control, None)
-        return
+        data_root = Path(staged)
+        for source in root.iterdir():
+            if source.name == "CONTROL": continue
+            target = data_root / source.name
+            if source.is_dir(): shutil.copytree(source, target)
+            else: shutil.copy2(source, target)
+        shared = PKG / "shared" / "ookla-speedtest-web"
+        if name == "luci-app-ookla-speedtest-web":
+            shutil.copytree(shared, data_root / "www/luci-static/resources/ookla-speedtest-web", dirs_exist_ok=True)
+        elif name == "gl-app-ookla-speedtest-web":
+            shutil.copytree(shared, data_root / "www/ookla-speedtest-web", dirs_exist_ok=True)
+        _build(name, version, release, outdir, data_root, cfiles, root)
 
-def _build(name, version, release, outdir, root, cfiles, control, data):
+def _build(name, version, release, outdir, root, cfiles, control_root):
     data = [p for p in root.rglob("*") if p.is_file() and "CONTROL" not in p.parts and "__pycache__" not in p.parts and p.suffix != ".pyc"]
     with tempfile.TemporaryDirectory() as d:
         ipk = Path(d) / name
         with tarfile.open(ipk, "w", format=tarfile.USTAR_FORMAT) as t:
-            for name_, payload in (("debian-binary", b"2.0\n"), ("control.tar.gz", tar_bytes(cfiles, root)), ("data.tar.gz", tar_bytes(data, root))):
+            for name_, payload in (("debian-binary", b"2.0\n"), ("control.tar.gz", tar_bytes(cfiles, control_root)), ("data.tar.gz", tar_bytes(data, root))):
                 info = tarfile.TarInfo(name_); info.size = len(payload); info.mtime = 0; info.uid = info.gid = 0; info.mode = 0o644
                 t.addfile(info, io.BytesIO(payload))
         ipk.write_bytes(gzip.compress(ipk.read_bytes(), mtime=0))

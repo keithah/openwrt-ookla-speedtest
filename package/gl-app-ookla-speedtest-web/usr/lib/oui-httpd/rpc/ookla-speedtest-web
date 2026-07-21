@@ -1,3 +1,4 @@
 #!/bin/sh
-# Delegates fixed methods: status, servers, start, history, delete_history, clear_history, settings.
+# Delegates fixed methods: status, servers, history, settings, start,
+# local_download, local_upload, and record_local.
 exec /usr/libexec/rpcd/ookla-speedtest-web call ookla-speedtest-web "$@"

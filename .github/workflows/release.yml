@@ -46,25 +46,15 @@ jobs:
           cp -a package/Makefile package/shared package/ookla-speedtest-webd package/luci-app-ookla-speedtest-web package/gl-app-ookla-speedtest-web "_release/ookla-speedtest-web-$version-$release/"
           if find _release -type f \( -name '*.tgz' -o -name '*.tar.gz' -o -name '*.ipk' -o -name '*.apk' -o -name '*.pem' -o -name '*.key' \) -print -quit | grep -q .; then echo 'forbidden vendor artifact'; exit 1; fi
           if rg -n -i 'speedtest-linux|private[ -]?key|http\.server|listen\s*\(|serve_forever|socket\.listen' _release; then exit 1; fi
+          # The builder produces deterministic OpenWrt-compatible IPKs.
           python3 scripts/build_web_ipks.py _release
-          (cd _release && sha256sum *.ipk > SHA256SUMS)
-          cat > _release/install.sh <<'EOF'
-#!/bin/sh
-set -eu
-base="${1:-.}"
-cd "$base"
-sha256sum -c SHA256SUMS
-command -v opkg >/dev/null 2>&1 || { echo 'opkg is required'; exit 1; }
-opkg install ./ookla-speedtest-webd_*_all.ipk ./luci-app-ookla-speedtest-web_*_all.ipk ./gl-app-ookla-speedtest-web_*_all.ipk
-EOF
+          cp install.sh _release/install.sh
           chmod 0755 _release/install.sh
           printf 'name: ookla-speedtest-web\nversion: %s\nrelease: %s\narch: all\n' "$version" "$release" > "_release/ookla-speedtest-web-$version-$release/manifest.yml"
-          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -czf "ookla-speedtest-web-$version-$release.tar.gz" -C _release .
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "asset=ookla-speedtest-web-$version-$release.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ steps.stage.outputs.tag }}" _release/*.ipk _release/install.sh _release/SHA256SUMS "${{ steps.stage.outputs.asset }}" --title "Ookla Speedtest web app ${{ steps.stage.outputs.tag }}" --generate-notes
+        run: gh release create "${{ steps.stage.outputs.tag }}" _release/*.ipk _release/install.sh --title "Ookla Speedtest web app ${{ steps.stage.outputs.tag }}" --generate-notes

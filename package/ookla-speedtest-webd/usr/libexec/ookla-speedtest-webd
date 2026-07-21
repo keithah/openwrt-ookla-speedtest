@@ -33,7 +33,7 @@ def unlock(x):
   try: os.rmdir(d)
   except: pass
 statefile=os.path.join(run,'state.json')
-termsfile=os.path.join(run,'terms-accepted')
+termsfile=os.environ.get('OOKLA_WEBD_TERMS',os.path.join(os.path.dirname(hist),'terms-accepted'))
 servercachefile=os.path.join(run,'servers-cache.json')
 _servers_cache=None; _servers_cache_at=0
 def atomic_write(path,data):
@@ -87,10 +87,27 @@ def main(req):
    items=[] if m=='clear_history' else [x for x in readhist() if str(x.get('id'))!=str(req.get('id'))]
    writehist(items); return {'ok':True}
   finally: unlock(lk)
- if m=='settings': return {'ok':True,'retention':retention()}
+ if m=='settings': return {'ok':True,'retention':retention(),'terms_accepted':terms_accepted()}
  if m=='accept_terms':
   try: atomic_write(termsfile,'accepted\n'); return {'ok':True}
   except Exception: return {'ok':False,'error':{'code':'storage_error'}}
+ if m=='local_download':
+  try: size=int(req.get('bytes',131072))
+  except Exception: size=0
+  if size<1024 or size>262144: return {'ok':False,'error':{'code':'invalid_transfer_size'}}
+  return {'ok':True,'bytes':size,'data':'0'*size}
+ if m=='local_upload':
+  data=req.get('data')
+  if not isinstance(data,str) or len(data)<1 or len(data)>262144: return {'ok':False,'error':{'code':'invalid_transfer_size'}}
+  return {'ok':True,'bytes':len(data)}
+ if m=='record_local':
+  try:
+   values={k:round(float(req[k]),2) for k in ('download_mbps','upload_mbps','ping_ms')}
+   if any(v<0 or v>100000 for v in values.values()): raise ValueError
+   rec=dict({'id':str(uuid.uuid4()),'timestamp':int(time.time()),'kind':'device-router','outcome':'success'},**values)
+   n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items)
+   return {'ok':True,'item':rec}
+  except Exception: return {'ok':False,'error':{'code':'invalid_local_result'}}
  if m=='servers':
   global _servers_cache,_servers_cache_at
   try:
@@ -123,7 +140,7 @@ def main(req):
   if p.returncode: raise ValueError('speedtest_failed')
   try: result=json.loads(raw)
   except: raise ValueError('malformed_json')
-  rec={'id':str(uuid.uuid4()),'timestamp':int(time.time()),'server_id':result.get('server',{}).get('id',sid),'server':result.get('server',{}),'latency':result.get('ping',{}).get('latency'),'download':result.get('download',{}),'upload':result.get('upload',{}),'isp':result.get('isp'),'outcome':'success'}
+  rec={'id':str(uuid.uuid4()),'timestamp':int(time.time()),'kind':'router-internet','server_id':result.get('server',{}).get('id',sid),'server':result.get('server',{}),'latency':result.get('ping',{}).get('latency'),'download':result.get('download',{}),'upload':result.get('upload',{}),'isp':result.get('isp'),'outcome':'success'}
   n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]
   writehist(items)
   writestate({'state':'result','result':result,'finished':int(time.time())})

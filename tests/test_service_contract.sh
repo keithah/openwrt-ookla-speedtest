@@ -10,9 +10,19 @@ chmod +x "$ROOT/bin/speedtest"
 export OOKLA_WEBD_RUN_DIR="$ROOT/run" OOKLA_WEBD_HISTORY="$ROOT/etc/history.jsonl" OOKLA_SPEEDTEST_BIN="$ROOT/bin/speedtest"
 SVC=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd
 out=$(printf '%s\n' '{"method":"status"}' | "$SVC"); echo "$out" | grep -q '"state"'
+printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"terms_accepted":false'
+printf '%s\n' '{"method":"start","server_id":"42"}' | "$SVC" | grep -q 'terms_required'
+printf '%s\n' '{"method":"accept_terms"}' | "$SVC" | grep -q '"ok":true'
+[ -f "$ROOT/etc/terms-accepted" ]
+printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"terms_accepted":true'
 out=$(printf '%s\n' '{"method":"start","server_id":"42"}' | "$SVC"); echo "$out" | grep -q '"ok":true'
 [ -s "$OOKLA_WEBD_HISTORY" ]
 out=$(printf '%s\n' '{"method":"history"}' | "$SVC"); echo "$out" | grep -q '"items"'
+out=$(printf '%s\n' '{"method":"local_download","bytes":1024}' | "$SVC"); echo "$out" | grep -q '"bytes":1024'; echo "$out" | grep -q '"data"'
+out=$(printf '%s\n' '{"method":"local_upload","data":"01234567"}' | "$SVC"); echo "$out" | grep -q '"bytes":8'
+printf '%s\n' '{"method":"local_download","bytes":9999999}' | "$SVC" | grep -q 'invalid_transfer_size'
+out=$(printf '%s\n' '{"method":"record_local","download_mbps":125.5,"upload_mbps":80.2,"ping_ms":3.1}' | "$SVC"); echo "$out" | grep -q '"ok":true'
+printf '%s\n' '{"method":"history"}' | "$SVC" | grep -q '"kind":"device-router"'
 out=$(printf '%s\n' '{"method":"start","server_id":"x"}' | "$SVC" || true); echo "$out" | grep -q 'invalid_server_id'
 printf '%s\n' '{"method":"clear_history"}' | "$SVC" | grep -q '"ok":true'
 # malformed output

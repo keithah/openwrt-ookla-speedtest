@@ -2,6 +2,8 @@
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 PKG="$ROOT/package"
+version=$(sed -n 's/^PKG_VERSION:=//p' "$PKG/Makefile")
+grep -q "version=\"$version\"" "$ROOT/install.sh"
 
 # Reproduce the Makefile's source-to-payload copies and ensure control metadata
 # never leaks into an installed root.
@@ -27,7 +29,7 @@ for f in \
 done
 grep -q 'ookla-speedtest-cli' "$PKG/ookla-speedtest-webd/CONTROL/control"
 grep -q 'ookla-speedtest-webd' "$PKG/luci-app-ookla-speedtest-web/CONTROL/control"
-grep -q 'ookla-speedtest-webd' "$PKG/gl-app-ookla-speedtest-web/CONTROL/control"
+grep -q 'luci-app-ookla-speedtest-web' "$PKG/gl-app-ookla-speedtest-web/CONTROL/control"
 if command -v rg >/dev/null 2>&1; then
   ! rg -n -i 'http\.server|serve_forever|socket\.listen|listen\s*\(' "$PKG" --glob '!**/*.pyc'
 else

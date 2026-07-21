@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ookla-speedtest-web
-PKG_VERSION:=1.0.1
+PKG_VERSION:=1.1.0
 PKG_RELEASE:=1
 PKGARCH:=all
 
@@ -26,7 +26,7 @@ define Package/gl-app-ookla-speedtest-web
   SECTION:=luci
   CATEGORY:=LuCI
   TITLE:=GL.iNet Ookla Speedtest application
-  DEPENDS:=+ookla-speedtest-webd
+  DEPENDS:=+luci-app-ookla-speedtest-web
 endef
 
 define Build/Compile

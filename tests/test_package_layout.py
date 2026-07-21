@@ -62,14 +62,14 @@ class PackageLayoutContractTests(unittest.TestCase):
         controls = {
             "ookla-speedtest-webd": ("ookla-speedtest-cli",),
             "luci-app-ookla-speedtest-web": ("ookla-speedtest-webd", "luci-base", "rpcd"),
-            "gl-app-ookla-speedtest-web": ("ookla-speedtest-webd",),
+            "gl-app-ookla-speedtest-web": ("luci-app-ookla-speedtest-web",),
         }
         for name, deps in controls.items():
             control = PACKAGE / name / "CONTROL/control"
             self.assertTrue(control.is_file(), control)
             text = control.read_text()
             self.assertIn("Package: " + name, text)
-            self.assertIn("Version: 1.0.1", text)
+            self.assertIn("Version: 1.1.0", text)
             for dep in deps:
                 self.assertRegex(text, rf"(?im)^Depends:.*\b{dep}\b")
         self.assertTrue((PACKAGE / "ookla-speedtest-webd/CONTROL/conffiles").is_file())
@@ -159,13 +159,13 @@ class PackageLayoutContractTests(unittest.TestCase):
         text = acl.read_text()
         self.assertNotIn('"*"', text)
         self.assertNotRegex(text, r"network|0\.0\.0\.0|listen")
-        methods = {"status", "servers", "start", "history", "delete_history", "clear_history", "settings"}
+        methods = {"status", "servers", "start", "history", "delete_history", "clear_history", "settings", "local_download", "local_upload", "record_local"}
         blob = json.dumps(data)
         for method in methods:
             self.assertIn(method, blob)
         acl_data = data["luci-app-ookla-speedtest-web"]
         self.assertEqual(acl_data["read"]["ubus"]["ookla-speedtest-webd"], ["status", "servers", "history"])
-        self.assertEqual(acl_data["write"]["ubus"]["ookla-speedtest-webd"], ["start", "delete_history", "clear_history", "settings"])
+        self.assertEqual(acl_data["write"]["ubus"]["ookla-speedtest-webd"], ["start", "delete_history", "clear_history", "settings", "accept_terms", "local_download", "local_upload", "record_local"])
 
 
 if __name__ == "__main__":

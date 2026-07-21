@@ -9,7 +9,7 @@
     },
     "write": {
       "ubus": {
-        "ookla-speedtest-webd": ["start", "delete_history", "clear_history", "settings", "accept_terms"]
+        "ookla-speedtest-webd": ["start", "delete_history", "clear_history", "settings", "accept_terms", "local_download", "local_upload", "record_local"]
       }
     }
   }

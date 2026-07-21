@@ -2,8 +2,9 @@
 
 This is an unofficial community package. Run an Ookla Speedtest from your router and view the result in a native
 LuCI or GL.iNet Applications experience. The test is explicitly labeled
-**router → internet**: the measurements describe the path from the router,
-not the phone or computer displaying the page.
+The interface offers separate **router → internet** and **device → router**
+measurements, plus a **Both** action that runs them together and maps the two
+paths separately in results, history, and analytics.
 
 ![Ookla Speedtest Web dashboard](docs/screenshots/dashboard.png)
 
@@ -14,6 +15,10 @@ repository—not from the macOS Speedtest application.
 
 - A Speedtest-style **GO** dashboard with download, upload, ping, ISP, and
   connection details.
+- Device → Router testing for the local Wi-Fi or Ethernet path without
+  confusing it with internet performance.
+- A Both mode that runs the local and internet measurements from one action
+  and presents separate result cards.
 - Manual server selection with search, alongside automatic server selection.
 - Persistent test history and simple trend analytics.
 - Settings and About views from the upper-right menu.
@@ -50,6 +55,12 @@ JSON result, stores a bounded history, and returns the result to the view.
 LuCI and GL.iNet use the same frontend and service, so the results and behavior
 are consistent between both views.
 
+For Device → Router, the browser transfers bounded test payloads through the
+same authenticated RPC session and measures application-layer download,
+upload, and latency. It does not open an additional HTTP port. Local and
+internet records carry different path labels and remain separate in history
+and analytics.
+
 ### First launch and Ookla terms
 
 The first attempt to run a test presents Ookla’s Terms of Use and Privacy
@@ -75,6 +86,12 @@ Enable **Remote Web Access** for the router in GoodCloud, authenticate to the
 router, and open the Ookla Speedtest application. The request follows the
 existing authenticated remote LuCI/GL.iNet path; this package does not create
 an unauthenticated service or require port forwarding.
+
+On a local network, the LuCI route is:
+
+```text
+http://router/cgi-bin/luci/admin/services/ookla-speedtest-web
+```
 
 ## Build from source
 

@@ -1,1 +1,38 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Speedtest</title><link rel="stylesheet" href="styles.css"></head><body><main id="app"><header><div class="brand">SPEEDTEST</div><nav aria-label="Primary"><button data-view="history">History</button><button data-view="analytics">Analytics</button><button data-view="settings">Settings</button><button data-view="about">About</button></nav></header><section class="hero"><div class="route"><span>ROUTER</span><b>›</b><span>INTERNET</span></div><button id="go-control" aria-label="Start speed test" class="go">GO</button><p id="status">Ready to test your connection</p><div class="meta"><span id="isp-badge">ISP</span><span id="network-badge">Wi‑Fi</span></div><p id="vpn-callout" class="vpn-callout" role="status"></p><div class="server"><div><small>SERVER</small><strong id="server-name">Auto</strong><span id="server-detail">Select a server</span></div><button id="server-picker">Change</button></div></section><section id="view" aria-live="polite"></section><div id="metrics" aria-live="polite"></div><div id="server-panel" hidden><input id="server-search" type="search" placeholder="Search servers" aria-label="Search servers"><div id="server-results" role="listbox" aria-label="Server results"></div></div></main><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Unofficial Ookla Speedtest Web</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main id="app">
+  <header><div class="brand">SPEEDTEST <small>UNOFFICIAL</small></div><nav aria-label="Primary"><button data-view="history">History</button><button data-view="analytics">Analytics</button><button data-view="settings">Settings</button><button data-view="about">About</button></nav></header>
+  <section class="hero">
+    <div class="mode-picker" role="group" aria-label="Test mode">
+      <button class="active" data-mode="router-internet">Router → Internet</button>
+      <button data-mode="device-router">Device → Router</button>
+      <button data-mode="both">Both</button>
+    </div>
+    <div class="route" id="route-label">ROUTER › INTERNET</div>
+    <button id="go-control" aria-label="Start selected speed tests" class="go">GO</button>
+    <p id="status">Ready to test your connection</p>
+    <p class="scope-note" id="scope-note">Tests the router's connection to the internet—not this device.</p>
+    <div class="meta"><span id="isp-badge">ISP</span><span id="network-badge">Connection</span></div>
+    <p id="vpn-callout" class="vpn-callout" role="status"></p>
+    <div class="server"><div><small>INTERNET TEST SERVER</small><strong id="server-name">Auto</strong><span id="server-detail">Select a server</span></div><button id="server-picker">Change</button></div>
+  </section>
+  <section id="results" class="results" aria-live="polite"></section>
+  <section id="view" aria-live="polite"></section>
+  <div id="server-panel" hidden><input id="server-search" type="search" placeholder="Search servers" aria-label="Search servers"><div id="server-results" role="listbox" aria-label="Server results"></div></div>
+</main>
+<dialog id="terms-dialog" aria-labelledby="terms-title">
+  <h2 id="terms-title">Ookla terms required</h2>
+  <p>The internet test runs Ookla Speedtest CLI on your router. Before the first internet test, review and accept Ookla's <a href="https://www.speedtest.net/about/terms" target="_blank" rel="noopener">Terms of Use</a> and <a href="https://www.speedtest.net/about/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+  <p>Your acceptance is stored on this router. This unofficial project is not affiliated with Ookla.</p>
+  <form method="dialog"><button value="cancel">Cancel</button><button id="accept-terms" value="accept">I agree</button></form>
+</dialog>
+<script src="app.js"></script>
+</body>
+</html>
