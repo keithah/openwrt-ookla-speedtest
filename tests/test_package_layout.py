@@ -69,7 +69,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             self.assertTrue(control.is_file(), control)
             text = control.read_text()
             self.assertIn("Package: " + name, text)
-            self.assertIn("Version: 1.1.0", text)
+            self.assertIn("Version: 1.1.1", text)
             for dep in deps:
                 self.assertRegex(text, rf"(?im)^Depends:.*\b{dep}\b")
         self.assertTrue((PACKAGE / "ookla-speedtest-webd/CONTROL/conffiles").is_file())

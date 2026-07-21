@@ -4,6 +4,9 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 PKG="$ROOT/package"
 version=$(sed -n 's/^PKG_VERSION:=//p' "$PKG/Makefile")
 grep -q "version=\"$version\"" "$ROOT/install.sh"
+grep -q 'install-ookla-speedtest-cli.sh' "$ROOT/install.sh"
+grep -q 'opkg install ookla-speedtest-webd luci-app-ookla-speedtest-web gl-app-ookla-speedtest-web' "$ROOT/install.sh"
+! grep -q 'opkg install.*https://' "$ROOT/install.sh"
 
 # Reproduce the Makefile's source-to-payload copies and ensure control metadata
 # never leaks into an installed root.

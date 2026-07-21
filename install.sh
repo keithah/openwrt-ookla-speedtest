@@ -1,18 +1,24 @@
 #!/bin/sh
+# Install the Ookla CLI dependency and web interfaces from the signed feed.
 set -eu
 
-version="1.1.0"
-base="https://github.com/keithah/openwrt-ookla-speedtest-web/releases/download/v${version}"
+version="1.1.1"
+feed_url="${OOKLA_FEED_URL:-https://keithah.github.io/openwrt-packages}"
 
-command -v opkg >/dev/null 2>&1 || {
-	printf '%s\n' 'opkg is required' >&2
+fail() {
+	printf 'ookla-speedtest-web installer: %s\n' "$*" >&2
 	exit 1
 }
 
-for package in \
-	ookla-speedtest-webd \
-	luci-app-ookla-speedtest-web \
-	gl-app-ookla-speedtest-web
-do
-	opkg install "${base}/${package}_${version}-1_all.ipk"
-done
+[ "$(id -u)" = 0 ] || fail 'must be run as root'
+command -v opkg >/dev/null 2>&1 || fail 'opkg is required'
+command -v wget >/dev/null 2>&1 || fail 'wget is required'
+
+# The CLI installer installs the feed key, preserves unrelated feed entries,
+# verifies architecture support, updates package lists, and installs the CLI.
+wget -qO- "$feed_url/install-ookla-speedtest-cli.sh" |
+	OOKLA_FEED_URL="$feed_url" sh
+
+opkg install ookla-speedtest-webd luci-app-ookla-speedtest-web gl-app-ookla-speedtest-web
+
+printf 'Installed Ookla Speedtest Web %s. Open Services > Ookla Speedtest in LuCI or Ookla Speedtest under GL.iNet Applications.\n' "$version"
