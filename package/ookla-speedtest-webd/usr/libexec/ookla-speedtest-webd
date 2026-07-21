@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os,sys,json,time,subprocess,fcntl,re,tempfile,errno
+import os,sys,json,time,subprocess,fcntl,re,tempfile,errno,uuid
 run=os.environ.get('OOKLA_WEBD_RUN_DIR','/var/run/ookla-speedtest-webd'); hist=os.environ.get('OOKLA_WEBD_HISTORY','/etc/ookla-speedtest-webd/history.jsonl'); binary=os.environ.get('OOKLA_SPEEDTEST_BIN','/usr/bin/speedtest'); maxout=1024*1024
 os.makedirs(run,exist_ok=True); os.makedirs(os.path.dirname(hist),exist_ok=True)
 def retention():
@@ -12,7 +12,9 @@ def retention():
  except Exception: return 100
 def out(x): print(json.dumps(x,separators=(',',':')))
 def lock():
- p=os.path.join(run,'start.lock'); f=open(p,'w')
+ p=os.path.join(run,'start.lock')
+ try: f=open(p,'w')
+ except OSError: return ('storage_error',None)
  try: fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB); return f,None
  except BlockingIOError:
   f.close(); return None,None
@@ -94,7 +96,7 @@ def main(req):
   if p.returncode: raise ValueError('speedtest_failed')
   try: result=json.loads(raw)
   except: raise ValueError('malformed_json')
-  rec={'timestamp':int(time.time()),'server_id':result.get('server',{}).get('id',sid),'server':result.get('server',{}),'latency':result.get('ping',{}).get('latency'),'download':result.get('download',{}),'upload':result.get('upload',{}),'isp':result.get('isp'),'outcome':'success'}
+  rec={'id':str(uuid.uuid4()),'timestamp':int(time.time()),'server_id':result.get('server',{}).get('id',sid),'server':result.get('server',{}),'latency':result.get('ping',{}).get('latency'),'download':result.get('download',{}),'upload':result.get('upload',{}),'isp':result.get('isp'),'outcome':'success'}
   n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]
   writehist(items)
   writestate({'state':'result','result':result,'finished':int(time.time())})
@@ -102,7 +104,7 @@ def main(req):
  except Exception as e:
   code='timeout' if isinstance(e,subprocess.TimeoutExpired) else ('output_too_large' if str(e)=='oversized_output' else ('speedtest_failed' if str(e)=='speedtest_failed' else 'malformed_output'))
   try:
-   rec={'timestamp':int(time.time()),'outcome':'error','error':{'code':code}}; n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items); writestate({'state':'error','error':{'code':code}})
+   rec={'id':str(uuid.uuid4()),'timestamp':int(time.time()),'outcome':'error','error':{'code':code}}; n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items); writestate({'state':'error','error':{'code':code}})
   except: pass
   return {'ok':False,'error':{'code':code}}
  finally: unlock(lk)
