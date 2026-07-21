@@ -1,0 +1,5 @@
+Package: gl-app-ookla-speedtest-web
+Version: 1
+Architecture: all
+Depends: ookla-speedtest-webd
+Description: GL.iNet Ookla Speedtest application

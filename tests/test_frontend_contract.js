@@ -5,4 +5,11 @@ const html=fs.readFileSync(path.join(root,'index.html'),'utf8'); const js=fs.rea
 assert.match(html,/id=["']go-control["']/); assert.match(html,/History/); assert.match(html,/Analytics/); assert.match(html,/Settings/); assert.match(html,/About/);
 assert.match(js,/subscribe\s*\(/); assert.match(js,/navigate\s*\(/); assert.match(js,/call\s*\(/); assert.match(js,/textContent/); assert.doesNotMatch(js,/innerHTML/);
 assert.match(js,/router.*internet|internet.*router/i); assert.match(css,/@media/); assert.match(css,/#0?4|navy|cyan/i);
+const luci=path.join(__dirname,'..','package','luci-app-ookla-speedtest-web'); const gl=path.join(__dirname,'..','package','gl-app-ookla-speedtest-web');
+for(const f of ['usr/share/luci/menu.d/luci-app-ookla-speedtest-web.json','www/luci-static/resources/view/ookla-speedtest-web/main.js','usr/libexec/rpcd/ookla-speedtest-web']) assert.ok(fs.existsSync(path.join(luci,f)),`missing ${f}`);
+for(const f of ['CONTROL/control','CONTROL/postinst','usr/share/oui/menu.d/ookla-speedtest-web.json','usr/lib/oui-httpd/rpc/ookla-speedtest-web','www/views/gl-sdk4-ui-ookla-speedtest-web.common.js']) assert.ok(fs.existsSync(path.join(gl,f)),`missing ${f}`);
+const ljs=fs.readFileSync(path.join(luci,'www/luci-static/resources/view/ookla-speedtest-web/main.js'),'utf8'); assert.match(ljs,/view\.extend/); assert.match(ljs,/rpc\.declare/); assert.match(ljs,/csrf|session|authenticated/i); assert.doesNotMatch(ljs,/https?:\/\//);
+const lrpc=fs.readFileSync(path.join(luci,'usr/libexec/rpcd/ookla-speedtest-web'),'utf8'); assert.match(lrpc,/list|call/); assert.match(lrpc,/OOKLA_SPEEDTEST_BIN/); assert.doesNotMatch(lrpc,/\$\(.*\)|`/);
+const gr=fs.readFileSync(path.join(gl,'usr/lib/oui-httpd/rpc/ookla-speedtest-web'),'utf8'); assert.match(gr,/status|servers|history|settings|start/); assert.doesNotMatch(gr,/listen|port|password|credential/i);
+const gm=fs.readFileSync(path.join(gl,'usr/share/oui/menu.d/ookla-speedtest-web.json'),'utf8'); assert.match(gm,/Applications|ookla/i);
 console.log('frontend contract ok');

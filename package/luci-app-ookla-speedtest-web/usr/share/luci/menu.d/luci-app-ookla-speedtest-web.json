@@ -1,0 +1,1 @@
+{"admin/services/ookla-speedtest-web":{"title":"Ookla Speedtest","order":80,"action":{"type":"view","path":"ookla-speedtest-web/main"},"depends":{"acl":["luci-app-ookla-speedtest-web"]}}}
