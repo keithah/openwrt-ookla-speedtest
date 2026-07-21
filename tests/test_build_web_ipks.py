@@ -5,6 +5,7 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from scripts.build_web_ipks import tar_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,16 +23,23 @@ def members(ipk):
 
 
 class WebIpkBuilderTests(unittest.TestCase):
+    def test_tar_output_normalizes_executable_modes(self):
+        with tempfile.TemporaryDirectory() as left, tempfile.TemporaryDirectory() as right:
+            a, b = Path(left) / "tool", Path(right) / "tool"
+            a.write_text("#!/bin/sh\nexit 0\n"); b.write_bytes(a.read_bytes())
+            a.chmod(0o700); b.chmod(0o755)
+            self.assertEqual(tar_bytes([a], Path(left)), tar_bytes([b], Path(right)))
+
     def test_built_ipks_include_shared_frontend_and_version(self):
         with tempfile.TemporaryDirectory() as output:
             subprocess.run(["python3", str(ROOT / "scripts/build_web_ipks.py"), output], check=True)
             packages = {path.name: members(path) for path in Path(output).glob("*.ipk")}
         self.assertEqual(3, len(packages))
         for name, (control, _, _) in packages.items():
-            self.assertIn("Version: 1.1.2-1", control, name)
-        self.assertIn("postinst", packages["luci-app-ookla-speedtest-web_1.1.2-1_all.ipk"][1])
-        luci = packages["luci-app-ookla-speedtest-web_1.1.2-1_all.ipk"][2]
-        glinet = packages["gl-app-ookla-speedtest-web_1.1.2-1_all.ipk"][2]
+            self.assertIn("Version: 1.1.3-1", control, name)
+        self.assertIn("postinst", packages["luci-app-ookla-speedtest-web_1.1.3-1_all.ipk"][1])
+        luci = packages["luci-app-ookla-speedtest-web_1.1.3-1_all.ipk"][2]
+        glinet = packages["gl-app-ookla-speedtest-web_1.1.3-1_all.ipk"][2]
         for filename in ("index.html", "app.js", "styles.css"):
             self.assertIn("www/luci-static/resources/ookla-speedtest-web/" + filename, luci)
             self.assertIn("www/ookla-speedtest-web/" + filename, glinet)

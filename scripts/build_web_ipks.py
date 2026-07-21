@@ -23,8 +23,8 @@ def tar_bytes(files, base, mode_control=False):
             rel = p.relative_to(base) if p.is_relative_to(base) else Path("control")
             if rel.parts and rel.parts[0] == "CONTROL": rel = Path(rel.name)
             info = tarfile.TarInfo(str(rel)); info.size = p.stat().st_size; info.mtime = 0
-            info.uid = info.gid = 0; info.uname = info.gname = ""; info.mode = p.stat().st_mode & 0o777
-            t.addfile(info, p.open("rb"))
+            info.uid = info.gid = 0; info.uname = info.gname = ""; info.mode = 0o755 if p.stat().st_mode & 0o111 else 0o644
+            with p.open("rb") as source: t.addfile(info, source)
     return gzip.compress(out.getvalue(), mtime=0)
 
 def build(name, version, release, outdir):

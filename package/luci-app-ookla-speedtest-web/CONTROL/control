@@ -1,5 +1,5 @@
 Package: luci-app-ookla-speedtest-web
-Version: 1.1.2
+Version: 1.1.3
 Architecture: all
 Depends: ookla-speedtest-webd, luci-base, rpcd
 Description: LuCI web interface for Ookla Speedtest
