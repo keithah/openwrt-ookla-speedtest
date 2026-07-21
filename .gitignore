@@ -6,3 +6,4 @@ bin/
 build_dir/
 __pycache__/
 *.pyc
+.superpowers/
