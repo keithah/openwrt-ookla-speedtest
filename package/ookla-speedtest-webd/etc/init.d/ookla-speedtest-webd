@@ -1,0 +1,14 @@
+#!/bin/sh /etc/rc.common
+
+START=95
+USE_PROCD=1
+
+start_service() {
+	local bin
+	bin="$(uci -q get ookla-speedtest-webd.@ookla-speedtest-webd[0].binary || echo /usr/bin/speedtest)"
+	mkdir -p /var/run/ookla-speedtest-webd
+	[ -x "$bin" ] || { logger -t ookla-speedtest-webd "speedtest CLI missing: $bin"; return 1; }
+	# Request-scoped JSON helper is launched by rpcd; this hook owns no persistent process.
+}
+
+stop_service() { :; }

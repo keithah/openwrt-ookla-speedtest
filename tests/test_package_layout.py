@@ -77,6 +77,40 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertRegex(readme, r"(?i)GL\.iNet.*Applications")
         self.assertRegex(readme, r"(?i)GoodCloud.*Remote Web Access")
 
+    def test_service_lifecycle_files_have_safe_contract(self):
+        service = PACKAGE / "ookla-speedtest-webd"
+        init = service / "etc/init.d/ookla-speedtest-webd"
+        self.assertTrue(init.stat().st_mode & 0o111)
+        init_text = init.read_text()
+        self.assertIn("/var/run/ookla-speedtest-webd", init_text)
+        self.assertIn("speedtest", init_text)
+        self.assertNotIn("procd_set_param command", init_text)
+        self.assertNotIn("respawn", init_text)
+        self.assertIn("Request-scoped", init_text)
+        self.assertNotRegex(init_text, r"listen|http\.server|0\.0\.0\.0")
+        defaults = (service / "etc/uci-defaults/99-ookla-speedtest-webd").read_text()
+        self.assertRegex(defaults, r"retention")
+        self.assertRegex(defaults, r"100")
+        self.assertIn("uci", defaults)
+        self.assertIn("/etc/config/ookla-speedtest-webd", (service / "CONTROL/conffiles").read_text())
+        postinst = (service / "CONTROL/postinst").read_text()
+        self.assertRegex(postinst, r"rpcd|ubus")
+        self.assertNotRegex(postinst, r"pytest|test_")
+
+    def test_rpcd_acl_is_limited_to_fixed_methods(self):
+        acl = PACKAGE / "luci-app-ookla-speedtest-web/usr/share/rpcd/acl.d/luci-app-ookla-speedtest-web.json"
+        data = json.loads(acl.read_text())
+        text = acl.read_text()
+        self.assertNotIn('"*"', text)
+        self.assertNotRegex(text, r"network|0\.0\.0\.0|listen")
+        methods = {"status", "servers", "start", "history", "delete_history", "clear_history", "settings"}
+        blob = json.dumps(data)
+        for method in methods:
+            self.assertIn(method, blob)
+        acl_data = data["luci-app-ookla-speedtest-web"]
+        self.assertEqual(acl_data["read"]["ubus"]["ookla-speedtest-webd"], ["status", "servers", "history"])
+        self.assertEqual(acl_data["write"]["ubus"]["ookla-speedtest-webd"], ["start", "delete_history", "clear_history", "settings"])
+
 
 if __name__ == "__main__":
     unittest.main()

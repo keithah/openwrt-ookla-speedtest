@@ -1,0 +1,6 @@
+#!/bin/sh
+
+uci -q get ookla-speedtest-webd.main >/dev/null 2>&1 || uci set ookla-speedtest-webd.main='ookla-speedtest-webd'
+uci -q get ookla-speedtest-webd.main.retention >/dev/null 2>&1 || uci set ookla-speedtest-webd.main.retention='100'
+uci commit ookla-speedtest-webd
+exit 0

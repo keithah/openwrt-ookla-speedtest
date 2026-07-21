@@ -1,0 +1,16 @@
+{
+  "luci-app-ookla-speedtest-web": {
+    "description": "Ookla speedtest web access",
+    "read": {
+      "ubus": {
+        "ookla-speedtest-webd": ["status", "servers", "history"]
+      },
+      "uci": ["ookla-speedtest-webd"]
+    },
+    "write": {
+      "ubus": {
+        "ookla-speedtest-webd": ["start", "delete_history", "clear_history", "settings"]
+      }
+    }
+  }
+}

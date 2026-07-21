@@ -1,0 +1,3 @@
+config ookla-speedtest-webd 'main'
+	option binary '/usr/bin/speedtest'
+	option retention '100'

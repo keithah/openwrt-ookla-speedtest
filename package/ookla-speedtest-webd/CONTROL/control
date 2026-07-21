@@ -1,0 +1,5 @@
+Package: ookla-speedtest-webd
+Version: 1
+Architecture: all
+Depends: ookla-speedtest-cli
+Description: Ookla speedtest web RPC helper
