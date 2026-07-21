@@ -1,0 +1,13 @@
+{
+  "type": "result",
+  "timestamp": "2026-07-21T14:32:10Z",
+  "ping": {"jitter": 0.856, "latency": 11.554, "low": 10.434, "high": 14.861},
+  "download": {"bandwidth": 37091386, "bytes": 444865296, "elapsed": 12001, "latency": {"iqm": 27.932}},
+  "upload": {"bandwidth": 11870123, "bytes": 142453496, "elapsed": 12001, "latency": {"iqm": 39.411}},
+  "packetLoss": 0,
+  "isp": "Example ISP",
+  "interface": {"internalIp": "192.0.2.2", "name": "eth0", "macAddr": "00:11:22:33:44:55", "isVpn": false, "externalIp": "198.51.100.2"},
+  "server": {"id": 12345, "host": "speed.example.test", "port": 8080, "name": "Example Server", "location": "Seattle, WA", "country": "United States", "ip": "192.0.2.10"},
+  "result": {"id": "375b2533-36b8-4f45-8e0a-46dfef77c282", "url": "https://www.speedtest.net/result/c/375b2533-36b8-4f45-8e0a-46dfef77c282", "persisted": true},
+  "unexpected": "must not be copied"
+}

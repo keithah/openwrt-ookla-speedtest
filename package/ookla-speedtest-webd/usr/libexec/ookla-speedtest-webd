@@ -73,6 +73,26 @@ def network_context():
    if subprocess.call(['pidof',marker],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)==0 and label not in vpn: vpn.append(label)
   except Exception: pass
  return {'vpn':bool(vpn),'vpn_names':vpn,'note':('Test reflects router traffic through '+', '.join(vpn)+'.' if vpn else 'No VPN path detected; test reflects the router WAN path.')}
+def bandwidth_mbps(value): return round(float(value)*8/1_000_000,2)
+def clamp_progress(value): return max(0.0,min(1.0,float(value)))
+def parse_jsonl_record(record):
+ if len(record if isinstance(record,bytes) else record.encode('utf-8'))>maxout: raise ValueError('oversized_jsonl_record')
+ return json.loads(record)
+def reduce_event(event):
+ kind=event.get('type')
+ if kind=='testStart':
+  return dict({'phase':'starting','progress':0.0},**{key:event.get(key) for key in ('isp','interface','server')})
+ if kind=='ping':
+  ping=event.get('ping') or {}
+  return {'phase':'ping','progress':clamp_progress(ping.get('progress',0)),'ping_ms':float(ping.get('latency',0)),'jitter_ms':float(ping.get('jitter',0))}
+ if kind in ('download','upload'):
+  row=event.get(kind) or {}
+  return {'phase':kind,'progress':clamp_progress(row.get('progress',0)),kind+'_mbps':bandwidth_mbps(row.get('bandwidth',0)),'loaded_ping_ms':float((row.get('latency') or {}).get('iqm',0))}
+ if kind=='result':
+  result={key:event.get(key) for key in ('ping','download','upload','packetLoss','isp','interface','server')}
+  result['result']={key:(event.get('result') or {}).get(key) for key in ('id','url')}
+  return {'phase':'complete','progress':1.0,'result':result}
+ return None
 def main(req):
  m=req.get('method','')
  if m=='status':
@@ -154,5 +174,6 @@ def main(req):
   except: pass
   return {'ok':False,'error':{'code':code}}
  finally: unlock(lk)
-try: req=json.loads(sys.argv[1] if len(sys.argv)>1 else sys.stdin.read()); out(main(req))
-except Exception as e: out({'ok':False,'error':{'code':'invalid_request'}})
+if __name__=='__main__':
+ try: req=json.loads(sys.argv[1] if len(sys.argv)>1 else sys.stdin.read()); out(main(req))
+ except Exception as e: out({'ok':False,'error':{'code':'invalid_request'}})
