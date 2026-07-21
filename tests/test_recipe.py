@@ -9,6 +9,18 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 RECIPE = REPOSITORY_ROOT / "Makefile"
 UPDATE_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "update-ookla.yml"
+GITIGNORE = REPOSITORY_ROOT / ".gitignore"
+
+IGNORED_BUILD_ARTIFACTS = {
+    "*.tgz",
+    "*.ipk",
+    "dl/",
+    "bin/",
+    "build_dir/",
+    "__pycache__/",
+    "*.pyc",
+}
+BINARY_SUFFIXES = {".tgz", ".ipk", ".apk", ".bin", ".elf"}
 
 CASES = {
     ("aarch64", False): "aarch64",
@@ -151,6 +163,33 @@ class RecipeTest(unittest.TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, workflow)
+
+    def test_gitignore_excludes_build_artifacts(self):
+        self.assertTrue(GITIGNORE.is_file(), ".gitignore is missing")
+        ignored_patterns = {
+            line.strip()
+            for line in GITIGNORE.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        self.assertTrue(
+            IGNORED_BUILD_ARTIFACTS.issubset(ignored_patterns),
+            f"missing ignore patterns: {sorted(IGNORED_BUILD_ARTIFACTS - ignored_patterns)}",
+        )
+
+    def test_tracked_files_contain_no_binary_artifacts(self):
+        result = subprocess.run(
+            ["git", "ls-files"],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        binary_artifacts = sorted(
+            path
+            for path in result.stdout.splitlines()
+            if Path(path).suffix.lower() in BINARY_SUFFIXES
+        )
+        self.assertEqual([], binary_artifacts)
 
 
 if __name__ == "__main__":

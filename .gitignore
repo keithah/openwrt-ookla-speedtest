@@ -1,0 +1,7 @@
+*.tgz
+*.ipk
+dl/
+bin/
+build_dir/
+__pycache__/
+*.pyc
