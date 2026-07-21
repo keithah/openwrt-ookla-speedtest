@@ -6,32 +6,42 @@ router-side service plus LuCI and GL.iNet Applications views; the Ookla binary
 itself remains a dependency supplied by the separate CLI package. It does not
 contain or distribute Ookla binaries or vendor release archives.
 
-## CLI dependency
+## Dependency and install
 
-The companion `ookla-speedtest-cli` package downloads Ookla's Linux ARM
-release for:
+This package depends on the separate `ookla-speedtest-cli` OpenWrt package.
+Install both components from Keith's signed feed with one command:
 
-- 64-bit ARM (`aarch64`)
-- 32-bit ARM with the hard-float ABI (`armhf`)
-- 32-bit ARM with the soft-float ABI (`armel`)
+```sh
+wget -qO- https://keithah.github.io/openwrt-packages/install-ookla-speedtest-web.sh | sh
+```
 
-Other architectures are not selectable for this package.
+The installer installs the CLI dependency first, then the web service and
+both frontend adapters. For source builds, add `ookla-speedtest-cli` to the
+same OpenWrt feed or build it separately before selecting this package.
 
-## Build and install
+## Screenshots
 
-From the root of an OpenWrt source tree on the build host, clone the package,
-select **Utilities → ookla-speedtest-cli** in the configuration menu, and
-build it:
+The Speedtest-style interface, including the router→internet label, history,
+analytics, settings, and server selection, is shown in the
+[UI screenshot gallery](https://imgur.com/a/HPLlPnS).
+
+## Source build
+
+From the root of an OpenWrt source tree on the build host, clone this package
+and its CLI dependency, select the web packages in `make menuconfig`, and
+build them:
 
 ```bash
+git clone https://github.com/keithah/openwrt-ookla-speedtest-web.git \
+  package/openwrt-ookla-speedtest-web
 git clone https://github.com/keithah/openwrt-ookla-speedtest-cli.git \
   package/openwrt-ookla-speedtest-cli
 make menuconfig
-make package/ookla-speedtest-cli/compile V=s
+make package/ookla-speedtest-web/compile V=s
 ```
 
-The OpenWrt build downloads the matching vendor archive and verifies it
-against the architecture-specific SHA-256 checksum pinned in the recipe.
+The web package uses the CLI package at runtime; it does not bundle the Ookla
+binary.
 
 The output package format and package manager depend on the OpenWrt version:
 
@@ -49,25 +59,21 @@ refer to the router's filesystem, not the build host's.
 On an OpenWrt 24.10 or older router, install the `.ipk`:
 
 ```bash
-opkg install /tmp/ookla-speedtest-cli_*.ipk
+opkg install /tmp/ookla-speedtest-cli_*.ipk /tmp/*ookla-speedtest-web*.ipk
 ```
 
 On an OpenWrt 25.12 or newer router, install the locally built, unsigned
 `.apk` with the required `--allow-untrusted` option:
 
 ```bash
-apk add --allow-untrusted /tmp/ookla-speedtest-cli-*.apk
+apk add --allow-untrusted /tmp/ookla-speedtest-cli-*.apk /tmp/*ookla-speedtest-web*.apk
 ```
 
-Then run `speedtest` on the router:
+Then open the web interface on the router:
 
 ```bash
-speedtest
+http://router/cgi-bin/luci/admin/services/ookla-speedtest-web
 ```
-
-On first use, `speedtest` asks you to accept Ookla's license agreement and
-privacy policy. Review the [Ookla EULA](https://www.speedtest.net/about/eula)
-before accepting it.
 
 ## Updates
 
