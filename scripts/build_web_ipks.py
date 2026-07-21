@@ -9,9 +9,9 @@ PACKAGES = ("ookla-speedtest-webd", "luci-app-ookla-speedtest-web", "gl-app-ookl
 
 def tar_bytes(files, base, mode_control=False):
     out = io.BytesIO()
-    with tarfile.open(fileobj=out, mode="w", format=tarfile.GNU_FORMAT) as t:
+    with tarfile.open(fileobj=out, mode="w", format=tarfile.USTAR_FORMAT) as t:
         for p in sorted(files):
-            rel = p.relative_to(base)
+            rel = p.relative_to(base) if p.is_relative_to(base) else Path("control")
             if rel.parts and rel.parts[0] == "CONTROL": rel = Path(rel.name)
             info = tarfile.TarInfo(str(rel)); info.size = p.stat().st_size; info.mtime = 0
             info.uid = info.gid = 0; info.uname = info.gname = ""; info.mode = p.stat().st_mode & 0o777
@@ -20,18 +20,23 @@ def tar_bytes(files, base, mode_control=False):
 
 def build(name, version, release, outdir):
     root = PKG / name; control = root / "CONTROL"
-    ctl = (control / "control").read_bytes()
+    ctl = (control / "control").read_text()
+    ctl = __import__('re').sub(r"^Version:.*$", f"Version: {version}-{release}", ctl, flags=__import__('re').M).encode()
     cfiles = [control / "control"] + ([control / "conffiles"] if (control / "conffiles").exists() else [])
+    with tempfile.NamedTemporaryFile() as generated:
+        generated.write(ctl); generated.flush(); cfiles[0] = Path(generated.name)
+        _build(name, version, release, outdir, root, cfiles, control, None)
+        return
+
+def _build(name, version, release, outdir, root, cfiles, control, data):
     data = [p for p in root.rglob("*") if p.is_file() and "CONTROL" not in p.parts and "__pycache__" not in p.parts and p.suffix != ".pyc"]
     with tempfile.TemporaryDirectory() as d:
         ipk = Path(d) / name
-        with ipk.open("wb") as f:
-            f.write(b"!<arch>\n")
+        with tarfile.open(ipk, "w", format=tarfile.USTAR_FORMAT) as t:
             for name_, payload in (("debian-binary", b"2.0\n"), ("control.tar.gz", tar_bytes(cfiles, root)), ("data.tar.gz", tar_bytes(data, root))):
-                header = f"{name_}/           ".encode()[:16] + f"{0:<12}{0:<6}{0:<6}{'100644':<8}{len(payload):<10}`\n".encode()
-                assert len(header) == 60
-                f.write(header); f.write(payload)
-                if len(payload) % 2: f.write(b"\n")
+                info = tarfile.TarInfo(name_); info.size = len(payload); info.mtime = 0; info.uid = info.gid = 0; info.mode = 0o644
+                t.addfile(info, io.BytesIO(payload))
+        ipk.write_bytes(gzip.compress(ipk.read_bytes(), mtime=0))
         target = outdir / f"{name}_{version}-{release}_all.ipk"; target.write_bytes(ipk.read_bytes())
 
 if __name__ == "__main__":
