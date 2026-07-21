@@ -5,10 +5,10 @@ LuCI or GL.iNet Applications experience. The test is explicitly labeled
 **router → internet**: the measurements describe the path from the router,
 not the phone or computer displaying the page.
 
-![Ookla Speedtest Web dashboard](https://i.imgur.com/HPLlPnS.png)
+![Ookla Speedtest Web dashboard](docs/screenshots/dashboard.png)
 
-More interface screenshots are available in the
-[Speedtest Web screenshot gallery](https://imgur.com/a/HPLlPnS).
+This screenshot is captured from the actual shared frontend shipped in this
+repository—not from the macOS Speedtest application.
 
 ## What you get
 
