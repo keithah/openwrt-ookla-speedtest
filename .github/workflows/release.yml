@@ -1,0 +1,58 @@
+name: Release web app
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Existing vX.Y.Z tag to publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
+
+      - name: Validate and stage deterministic publisher asset
+        id: stage
+        shell: bash
+        env:
+          TAG_INPUT: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^PKG_VERSION:=//p' package/Makefile)"
+          release="$(sed -n 's/^PKG_RELEASE:=//p' package/Makefile)"
+          tag="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_EVENT_NAME}" = workflow_dispatch ]; then tag="$TAG_INPUT"; fi
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "${tag#v}" = "$version"
+          [[ "$release" =~ ^[0-9]+$ ]]
+          test "$(printf '%s\n' "$version" | wc -l)" -eq 1
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(grep -c '^PKG_VERSION:=' package/Makefile)" -eq 1
+          test "$(grep -c '^PKG_RELEASE:=' package/Makefile)" -eq 1
+          grep -Eq '^PKGARCH:=all' package/Makefile
+          rm -rf _release
+          mkdir -p "_release/ookla-speedtest-web-$version-$release"
+          cp -a package/Makefile package/shared package/ookla-speedtest-webd package/luci-app-ookla-speedtest-web package/gl-app-ookla-speedtest-web "_release/ookla-speedtest-web-$version-$release/"
+          if find _release -type f \( -name '*.tgz' -o -name '*.tar.gz' -o -name '*.ipk' -o -name '*.apk' -o -name '*.pem' -o -name '*.key' \) -print -quit | grep -q .; then echo 'forbidden vendor artifact'; exit 1; fi
+          if rg -n -i 'speedtest-linux|private[ -]?key|http\.server|listen\s*\(|serve_forever|socket\.listen' _release; then exit 1; fi
+          printf 'name: ookla-speedtest-web\nversion: %s\nrelease: %s\narch: all\n' "$version" "$release" > "_release/ookla-speedtest-web-$version-$release/manifest.yml"
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -czf "ookla-speedtest-web-$version-$release.tar.gz" -C _release "ookla-speedtest-web-$version-$release"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "asset=ookla-speedtest-web-$version-$release.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ steps.stage.outputs.tag }}" "${{ steps.stage.outputs.asset }}" --title "Ookla Speedtest web app ${{ steps.stage.outputs.tag }}" --generate-notes
