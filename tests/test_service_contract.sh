@@ -13,6 +13,7 @@ RPC=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/luci-app-ookla-speedtes
 "$RPC" list | grep -q '"local_download"'
 printf '%s\n' '{"bytes":1024}' | OOKLA_WEBD_HELPER="$SVC" "$RPC" call local_download | grep -q '"bytes":1024'
 out=$(printf '%s\n' '{"method":"status"}' | "$SVC"); echo "$out" | grep -q '"state"'
+out=$("$SVC" '{"method":"local_download","bytes":1024}'); echo "$out" | grep -q '"bytes":1024'; echo "$out" | grep -q '"data"'
 printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"terms_accepted":false'
 printf '%s\n' '{"method":"start","server_id":"42"}' | "$SVC" | grep -q 'terms_required'
 printf '%s\n' '{"method":"accept_terms"}' | "$SVC" | grep -q '"ok":true'

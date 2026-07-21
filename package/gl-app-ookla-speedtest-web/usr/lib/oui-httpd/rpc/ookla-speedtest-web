@@ -1,4 +1,43 @@
-#!/bin/sh
-# Delegates fixed methods: status, servers, history, settings, start,
-# local_download, local_upload, and record_local.
-exec /usr/libexec/rpcd/ookla-speedtest-web call ookla-speedtest-web "$@"
+local cjson = require "cjson"
+
+local M = {}
+local helper = "/usr/libexec/ookla-speedtest-webd"
+
+local function invoke(method, params)
+    params = params or {}
+    params.method = method
+
+    local proc, spawn_err = ngx.pipe.spawn(
+        {helper, cjson.encode(params)},
+        {stdout_read_timeout = 130000}
+    )
+    if not proc then
+        return {ok = false, error = {code = "bridge_error", message = spawn_err}}
+    end
+
+    local output, read_err = proc:stdout_read_all()
+    proc:wait()
+    if not output then
+        return {ok = false, error = {code = "bridge_error", message = read_err}}
+    end
+
+    local ok, result = pcall(cjson.decode, output)
+    if not ok or type(result) ~= "table" then
+        return {ok = false, error = {code = "bridge_error", message = "Invalid helper response"}}
+    end
+    return result
+end
+
+function M.status(params) return invoke("status", params) end
+function M.servers(params) return invoke("servers", params) end
+function M.start(params) return invoke("start", params) end
+function M.history(params) return invoke("history", params) end
+function M.delete_history(params) return invoke("delete_history", params) end
+function M.clear_history(params) return invoke("clear_history", params) end
+function M.settings(params) return invoke("settings", params) end
+function M.accept_terms(params) return invoke("accept_terms", params) end
+function M.local_download(params) return invoke("local_download", params) end
+function M.local_upload(params) return invoke("local_upload", params) end
+function M.record_local(params) return invoke("record_local", params) end
+
+return M

@@ -9,7 +9,7 @@ grep -qi 'authenticated' "$README"
 grep -q '/cgi-bin/luci/admin/services/ookla-speedtest-web' "$README"
 grep -qi 'Applications' "$README"
 ! grep -Eqi 'custom port|public listener|port[[:space:]]*[:=]|credential flow' "$README" "$GL"
-grep -q 'sysauth' "$GL"
+grep -q 'window\.\$request' "$GL"
 grep -q 'SpeedtestWebAdapter' "$GL"
 grep -q 'luci-static/resources/ookla-speedtest-web/index.html' "$GL"
 echo 'GoodCloud route contract: ok'

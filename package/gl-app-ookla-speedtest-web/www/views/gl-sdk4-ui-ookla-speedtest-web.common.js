@@ -1,3 +1,59 @@
 'use strict';
-/* GL.iNet SDK view: reuse authenticated LuCI session and shared dashboard. */
-window.OoklaSpeedtestGL = {mount:function (el, remote, rpc) { var frame=document.createElement('iframe'); frame.title='Ookla Speedtest dashboard'; frame.dataset.remote=remote ? 'true' : 'false'; frame.style.cssText='width:100%;height:760px;border:0'; var bridge=rpc||{call:function(m,p){var match=document.cookie.match(/(?:^|;)\s*sysauth=([^;]+)/); if(!match) return Promise.reject(new Error('Authentication required')); return fetch('/ubus',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'call',params:[decodeURIComponent(match[1]),'ookla-speedtest-web',m,p||{}]})}).then(function(r){return r.json()}).then(function(r){return r.result&&r.result[1]||r});},subscribe:function(){},navigate:function(){}}; window.SpeedtestWebAdapter=bridge; frame.contentWindow.SpeedtestWebAdapter=bridge; frame.src='/luci-static/resources/ookla-speedtest-web/index.html'; el.appendChild(frame); }};
+
+module.exports = {
+  name: 'ookla-speedtest-web',
+  data: function () {
+    return { frame: null, bridge: null };
+  },
+  mounted: function () {
+    var self = this;
+    this.bridge = {
+      call: function (method, params) {
+        if (method === 'runTest') method = 'start';
+        if (typeof window.$request !== 'function') {
+          return Promise.reject(new Error('GL.iNet authenticated request service unavailable'));
+        }
+        return window.$request(
+          'call',
+          ['sid', 'ookla-speedtest-web', method, params || {}],
+          { timeout: method === 'start' ? 130000 : 30000 }
+        );
+      },
+      subscribe: function () {},
+      navigate: function () {}
+    };
+    window.SpeedtestWebAdapter = this.bridge;
+    this.frame = document.createElement('iframe');
+    this.frame.title = 'Unofficial Ookla Speedtest dashboard';
+    this.frame.style.cssText = 'display:block;width:100%;min-height:900px;border:0';
+    this.frame.onload = function () {
+      try { self.frame.contentWindow.SpeedtestWebAdapter = self.bridge; } catch (_) {}
+    };
+    this.$refs.host.appendChild(this.frame);
+    fetch('/luci-static/resources/ookla-speedtest-web/index.html', {
+      credentials: 'same-origin',
+      cache: 'no-store'
+    }).then(function (response) {
+      if (!response.ok) throw new Error('Dashboard request failed: ' + response.status);
+      return response.text();
+    }).then(function (html) {
+      self.frame.srcdoc = html.replace(
+        '<head>',
+        '<head><base href="/luci-static/resources/ookla-speedtest-web/">'
+      );
+    }).catch(function (error) {
+      self.$refs.host.textContent = 'Unable to load Ookla Speedtest: ' + error.message;
+    });
+  },
+  beforeDestroy: function () {
+    if (this.frame) this.frame.remove();
+    if (window.SpeedtestWebAdapter === this.bridge) delete window.SpeedtestWebAdapter;
+  },
+  render: function (createElement) {
+    return createElement('div', {
+      ref: 'host',
+      attrs: { 'data-app': 'ookla-speedtest-web' },
+      style: { width: '100%', minHeight: '900px' }
+    });
+  }
+};

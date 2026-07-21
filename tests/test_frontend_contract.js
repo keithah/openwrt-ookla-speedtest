@@ -15,8 +15,16 @@ for(const f of ['CONTROL/control','CONTROL/postinst','usr/share/oui/menu.d/ookla
 const ljs=fs.readFileSync(path.join(luci,'www/luci-static/resources/view/ookla-speedtest-web/main.js'),'utf8'); assert.match(ljs,/view\.extend/); assert.match(ljs,/rpc\.declare/); assert.match(ljs,/csrf|session|authenticated/i); assert.doesNotMatch(ljs,/https?:\/\//);
 assert.match(ljs,/window\.SpeedtestWebAdapter/);
 const lrpc=fs.readFileSync(path.join(luci,'usr/libexec/rpcd/ookla-speedtest-web'),'utf8'); assert.match(lrpc,/list|call/); assert.match(lrpc,/OOKLA_SPEEDTEST_BIN/); assert.doesNotMatch(lrpc,/\$\(.*\)|`/);
-const gr=fs.readFileSync(path.join(gl,'usr/lib/oui-httpd/rpc/ookla-speedtest-web'),'utf8'); assert.match(gr,/status|servers|history|settings|start|local_download|local_upload/); assert.doesNotMatch(gr,/listen|port|password|credential/i);
+const gr=fs.readFileSync(path.join(gl,'usr/lib/oui-httpd/rpc/ookla-speedtest-web'),'utf8');
+assert.match(gr,/local M\s*=\s*\{\}/);
+assert.match(gr,/function M\.settings/);
+assert.match(gr,/function M\.local_download/);
+assert.match(gr,/function M\.local_upload/);
+assert.match(gr,/return M/);
+assert.doesNotMatch(gr,/^#!\/bin\/sh/m);
+assert.doesNotMatch(gr,/\/usr\/libexec\/rpcd\/ookla-speedtest-web/);
+assert.doesNotMatch(gr,/listen|port|password|credential/i);
 const gm=JSON.parse(fs.readFileSync(path.join(gl,'usr/share/oui/menu.d/ookla-speedtest-web.json'),'utf8'));
 assert.strictEqual(gm.parent,'applications'); assert.strictEqual(gm.level,2); assert.strictEqual(gm.view,'ookla-speedtest-web'); assert.strictEqual(gm.title,'Ookla Speedtest');
-const gv=fs.readFileSync(path.join(gl,'www/views/gl-sdk4-ui-ookla-speedtest-web.common.js'),'utf8'); assert.match(gv,/window\.SpeedtestWebAdapter/);
+const gv=fs.readFileSync(path.join(gl,'www/views/gl-sdk4-ui-ookla-speedtest-web.common.js'),'utf8'); assert.match(gv,/window\.SpeedtestWebAdapter/); assert.match(gv,/module\.exports/); assert.match(gv,/window\.\$request/); assert.match(gv,/srcdoc/); assert.match(gv,/<base href=/); assert.doesNotMatch(gv,/sysauth/); assert.doesNotMatch(gv,/\.src\s*=\s*['"]\/luci-static/);
 console.log('frontend contract ok');

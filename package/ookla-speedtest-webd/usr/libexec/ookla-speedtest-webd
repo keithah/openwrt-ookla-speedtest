@@ -154,5 +154,5 @@ def main(req):
   except: pass
   return {'ok':False,'error':{'code':code}}
  finally: unlock(lk)
-try: req=json.loads(sys.stdin.read()); out(main(req))
+try: req=json.loads(sys.argv[1] if len(sys.argv)>1 else sys.stdin.read()); out(main(req))
 except Exception as e: out({'ok':False,'error':{'code':'invalid_request'}})
