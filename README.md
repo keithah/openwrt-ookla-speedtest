@@ -1,13 +1,15 @@
-# OpenWrt package for Ookla Speedtest CLI
+# OpenWrt Ookla Speedtest Web
 
-This repository provides an unofficial, source-only OpenWrt package recipe for
-the [Ookla Speedtest CLI](https://www.speedtest.net/apps/cli). It does not
-contain or distribute Ookla binaries, release archives, or prebuilt OpenWrt
-`.ipk` or `.apk` packages.
+This repository provides an unofficial OpenWrt web frontend for the
+[Ookla Speedtest CLI](https://www.speedtest.net/apps/cli). It packages the
+router-side service plus LuCI and GL.iNet Applications views; the Ookla binary
+itself remains a dependency supplied by the separate CLI package. It does not
+contain or distribute Ookla binaries or vendor release archives.
 
-## Supported targets
+## CLI dependency
 
-The recipe supports Ookla's Linux ARM releases for:
+The companion `ookla-speedtest-cli` package downloads Ookla's Linux ARM
+release for:
 
 - 64-bit ARM (`aarch64`)
 - 32-bit ARM with the hard-float ABI (`armhf`)
