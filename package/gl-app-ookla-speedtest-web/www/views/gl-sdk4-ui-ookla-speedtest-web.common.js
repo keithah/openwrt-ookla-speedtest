@@ -1,3 +1,3 @@
 'use strict';
 /* GL.iNet SDK view: reuse authenticated LuCI session and shared dashboard. */
-window.OoklaSpeedtestGL = {mount:function (el, remote) { var frame=document.createElement('iframe'); frame.src='/luci-static/resources/ookla-speedtest-web/index.html'; frame.title='Ookla Speedtest dashboard'; frame.dataset.remote=remote ? 'true' : 'false'; frame.style.cssText='width:100%;height:760px;border:0'; el.appendChild(frame); }};
+window.OoklaSpeedtestGL = {mount:function (el, remote, rpc) { var frame=document.createElement('iframe'); frame.title='Ookla Speedtest dashboard'; frame.dataset.remote=remote ? 'true' : 'false'; frame.style.cssText='width:100%;height:760px;border:0'; frame.contentWindow.SpeedtestWebAdapter=rpc||{call:function(){return Promise.reject(new Error('RPC unavailable'));},subscribe:function(){},navigate:function(){}}; frame.src='/luci-static/resources/ookla-speedtest-web/index.html'; el.appendChild(frame); }};

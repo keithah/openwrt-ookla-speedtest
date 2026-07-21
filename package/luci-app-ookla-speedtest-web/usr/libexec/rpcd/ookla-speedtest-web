@@ -4,7 +4,7 @@ methods=('status','servers','start','history','delete_history','clear_history','
 if len(sys.argv)>1 and sys.argv[1]=='list':
  print(json.dumps({'ookla-speedtest-web':{m:[] for m in methods}})); raise SystemExit
 if len(sys.argv)>1 and sys.argv[1]=='call':
- try: method=sys.argv[3]; params=json.loads(sys.stdin.read() or '{}')
+ try: method=sys.argv[3]; params=json.loads(sys.stdin.read() or '{}'); assert isinstance(params,dict)
  except Exception: print(json.dumps({'error':'invalid_request'})); raise SystemExit
  if method not in methods: print(json.dumps({'error':'unknown_method'})); raise SystemExit
  env=os.environ.copy(); env['OOKLA_SPEEDTEST_BIN']=env.get('OOKLA_SPEEDTEST_BIN','/usr/bin/speedtest')
