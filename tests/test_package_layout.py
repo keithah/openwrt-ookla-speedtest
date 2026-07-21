@@ -21,6 +21,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             "ookla-speedtest-webd/CONTROL/conffiles",
             "ookla-speedtest-webd/CONTROL/postinst",
             "luci-app-ookla-speedtest-web/CONTROL/control",
+            "luci-app-ookla-speedtest-web/CONTROL/postinst",
             "luci-app-ookla-speedtest-web/usr/share/luci/menu.d/luci-app-ookla-speedtest-web.json",
             "luci-app-ookla-speedtest-web/usr/share/rpcd/acl.d/luci-app-ookla-speedtest-web.json",
             "luci-app-ookla-speedtest-web/www/luci-static/resources/view/ookla-speedtest-web/main.js",
@@ -69,7 +70,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             self.assertTrue(control.is_file(), control)
             text = control.read_text()
             self.assertIn("Package: " + name, text)
-            self.assertIn("Version: 1.1.1", text)
+            self.assertIn("Version: 1.1.2", text)
             for dep in deps:
                 self.assertRegex(text, rf"(?im)^Depends:.*\b{dep}\b")
         self.assertTrue((PACKAGE / "ookla-speedtest-webd/CONTROL/conffiles").is_file())
@@ -103,6 +104,11 @@ class PackageLayoutContractTests(unittest.TestCase):
             self.assertNotIn("speedtest-linux", text)
             self.assertNotIn("private key", text)
             self.assertNotRegex(text, r"(?:http\.server|listen\s*\(|serve_forever|socket\.listen)")
+
+    def test_service_uses_only_core_id_generation(self):
+        service = (PACKAGE / "ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd").read_text()
+        self.assertNotRegex(service, r"\bimport\s+uuid\b|\buuid\.")
+        self.assertIn("os.urandom", service)
 
     def test_fixture_contains_successful_result_shape(self):
         fixture = ROOT / "tests" / "fixtures" / "speedtest-result.json"
@@ -152,6 +158,8 @@ class PackageLayoutContractTests(unittest.TestCase):
         postinst = (service / "CONTROL/postinst").read_text()
         self.assertRegex(postinst, r"rpcd|ubus")
         self.assertNotRegex(postinst, r"pytest|test_")
+        luci_postinst = (PACKAGE / "luci-app-ookla-speedtest-web/CONTROL/postinst").read_text()
+        self.assertIn("rpcd", luci_postinst)
 
     def test_rpcd_acl_is_limited_to_fixed_methods(self):
         acl = PACKAGE / "luci-app-ookla-speedtest-web/usr/share/rpcd/acl.d/luci-app-ookla-speedtest-web.json"

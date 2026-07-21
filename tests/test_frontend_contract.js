@@ -7,6 +7,7 @@ assert.match(js,/subscribe\s*\(/); assert.match(js,/navigate\s*\(/); assert.matc
 assert.match(js,/router.*internet|internet.*router/i); assert.match(css,/@media/); assert.match(css,/#0?4|navy|cyan/i);
 for(const mode of ['router-internet','device-router','both']) assert.match(html,new RegExp(`data-mode=["']${mode}["']`));
 assert.match(js,/local_download/); assert.match(js,/local_upload/); assert.match(js,/Promise\.all/);
+assert.match(js,/size=32768/); assert.doesNotMatch(js,/size=131072/);
 assert.match(js,/Router → Internet/); assert.match(js,/Device → Router/);
 const luci=path.join(__dirname,'..','package','luci-app-ookla-speedtest-web'); const gl=path.join(__dirname,'..','package','gl-app-ookla-speedtest-web');
 for(const f of ['usr/share/luci/menu.d/luci-app-ookla-speedtest-web.json','www/luci-static/resources/view/ookla-speedtest-web/main.js','usr/libexec/rpcd/ookla-speedtest-web']) assert.ok(fs.existsSync(path.join(luci,f)),`missing ${f}`);

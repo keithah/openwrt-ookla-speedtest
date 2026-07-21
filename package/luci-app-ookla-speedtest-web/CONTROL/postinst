@@ -1,0 +1,5 @@
+#!/bin/sh
+[ -n "$IPKG_INSTROOT" ] && exit 0
+/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+ubus call system reload_config >/dev/null 2>&1 || true
+exit 0

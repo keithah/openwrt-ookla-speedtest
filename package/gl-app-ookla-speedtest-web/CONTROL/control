@@ -1,5 +1,5 @@
 Package: gl-app-ookla-speedtest-web
-Version: 1.1.1
+Version: 1.1.2
 Architecture: all
 Depends: luci-app-ookla-speedtest-web
 Description: GL.iNet Ookla Speedtest application

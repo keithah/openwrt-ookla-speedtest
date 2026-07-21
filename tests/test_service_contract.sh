@@ -9,6 +9,9 @@ SH
 chmod +x "$ROOT/bin/speedtest"
 export OOKLA_WEBD_RUN_DIR="$ROOT/run" OOKLA_WEBD_HISTORY="$ROOT/etc/history.jsonl" OOKLA_SPEEDTEST_BIN="$ROOT/bin/speedtest"
 SVC=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd
+RPC=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/luci-app-ookla-speedtest-web/usr/libexec/rpcd/ookla-speedtest-web
+"$RPC" list | grep -q '"local_download"'
+printf '%s\n' '{"bytes":1024}' | OOKLA_WEBD_HELPER="$SVC" "$RPC" call local_download | grep -q '"bytes":1024'
 out=$(printf '%s\n' '{"method":"status"}' | "$SVC"); echo "$out" | grep -q '"state"'
 printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"terms_accepted":false'
 printf '%s\n' '{"method":"start","server_id":"42"}' | "$SVC" | grep -q 'terms_required'

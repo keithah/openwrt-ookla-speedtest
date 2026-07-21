@@ -10,6 +10,15 @@ PACKAGES = ("ookla-speedtest-webd", "luci-app-ookla-speedtest-web", "gl-app-ookl
 def tar_bytes(files, base, mode_control=False):
     out = io.BytesIO()
     with tarfile.open(fileobj=out, mode="w", format=tarfile.USTAR_FORMAT) as t:
+        directories = set()
+        for p in files:
+            rel = p.relative_to(base) if p.is_relative_to(base) else Path("control")
+            if rel.parts and rel.parts[0] == "CONTROL": rel = Path(rel.name)
+            directories.update(rel.parents)
+        for rel in sorted((d for d in directories if str(d) != "."), key=lambda d: (len(d.parts), str(d))):
+            info = tarfile.TarInfo(str(rel)); info.type = tarfile.DIRTYPE; info.mtime = 0
+            info.uid = info.gid = 0; info.uname = info.gname = ""; info.mode = 0o755
+            t.addfile(info)
         for p in sorted(files):
             rel = p.relative_to(base) if p.is_relative_to(base) else Path("control")
             if rel.parts and rel.parts[0] == "CONTROL": rel = Path(rel.name)
@@ -22,7 +31,7 @@ def build(name, version, release, outdir):
     root = PKG / name; control = root / "CONTROL"
     ctl = (control / "control").read_text()
     ctl = __import__('re').sub(r"^Version:.*$", f"Version: {version}-{release}", ctl, flags=__import__('re').M).encode()
-    cfiles = [control / "control"] + ([control / "conffiles"] if (control / "conffiles").exists() else [])
+    cfiles = [control / "control"] + sorted(p for p in control.iterdir() if p.is_file() and p.name != "control")
     with tempfile.NamedTemporaryFile() as generated, tempfile.TemporaryDirectory() as staged:
         generated.write(ctl); generated.flush(); cfiles[0] = Path(generated.name)
         data_root = Path(staged)

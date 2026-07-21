@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os,sys,json,time,subprocess,fcntl,re,tempfile,errno,uuid
+import os,sys,json,time,subprocess,fcntl,re,tempfile,errno
 run=os.environ.get('OOKLA_WEBD_RUN_DIR','/var/run/ookla-speedtest-webd'); hist=os.environ.get('OOKLA_WEBD_HISTORY','/etc/ookla-speedtest-webd/history.jsonl'); binary=os.environ.get('OOKLA_SPEEDTEST_BIN','/usr/bin/speedtest'); maxout=1024*1024
 os.makedirs(run,exist_ok=True); os.makedirs(os.path.dirname(hist),exist_ok=True)
 def retention():
@@ -11,6 +11,7 @@ def retention():
   return n
  except Exception: return 100
 def out(x): print(json.dumps(x,separators=(',',':')))
+def new_id(): return os.urandom(16).hex()
 def lock():
  p=os.path.join(run,'start.lock')
  try: f=open(p,'w')
@@ -104,7 +105,7 @@ def main(req):
   try:
    values={k:round(float(req[k]),2) for k in ('download_mbps','upload_mbps','ping_ms')}
    if any(v<0 or v>100000 for v in values.values()): raise ValueError
-   rec=dict({'id':str(uuid.uuid4()),'timestamp':int(time.time()),'kind':'device-router','outcome':'success'},**values)
+   rec=dict({'id':new_id(),'timestamp':int(time.time()),'kind':'device-router','outcome':'success'},**values)
    n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items)
    return {'ok':True,'item':rec}
   except Exception: return {'ok':False,'error':{'code':'invalid_local_result'}}
@@ -140,7 +141,7 @@ def main(req):
   if p.returncode: raise ValueError('speedtest_failed')
   try: result=json.loads(raw)
   except: raise ValueError('malformed_json')
-  rec={'id':str(uuid.uuid4()),'timestamp':int(time.time()),'kind':'router-internet','server_id':result.get('server',{}).get('id',sid),'server':result.get('server',{}),'latency':result.get('ping',{}).get('latency'),'download':result.get('download',{}),'upload':result.get('upload',{}),'isp':result.get('isp'),'outcome':'success'}
+  rec={'id':new_id(),'timestamp':int(time.time()),'kind':'router-internet','server_id':result.get('server',{}).get('id',sid),'server':result.get('server',{}),'latency':result.get('ping',{}).get('latency'),'download':result.get('download',{}),'upload':result.get('upload',{}),'isp':result.get('isp'),'outcome':'success'}
   n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]
   writehist(items)
   writestate({'state':'result','result':result,'finished':int(time.time())})
@@ -149,7 +150,7 @@ def main(req):
  except Exception as e:
   code='timeout' if isinstance(e,subprocess.TimeoutExpired) else ('output_too_large' if str(e)=='oversized_output' else ('speedtest_failed' if str(e)=='speedtest_failed' else 'malformed_output'))
   try:
-   rec={'id':str(uuid.uuid4()),'timestamp':int(time.time()),'outcome':'error','error':{'code':code}}; n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items); writestate({'state':'error','error':{'code':code}})
+   rec={'id':new_id(),'timestamp':int(time.time()),'kind':'router-internet','outcome':'error','error':{'code':code}}; n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items); writestate({'state':'error','error':{'code':code}})
   except: pass
   return {'ok':False,'error':{'code':code}}
  finally: unlock(lk)
