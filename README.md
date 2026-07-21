@@ -94,6 +94,12 @@ maintained by Keith Herrington.
 The optional `ookla-speedtest-web` package adds a LuCI and GL.iNet web
 interface around the CLI package. On a local router, open LuCI at:
 
+Install the published web packages from Keith's signed feed with one command:
+
+```sh
+wget -qO- https://keithah.github.io/openwrt-packages/install-ookla-speedtest-web.sh | sh
+```
+
 ```
 http://router/cgi-bin/luci/admin/services/ookla-speedtest-web
 ```
