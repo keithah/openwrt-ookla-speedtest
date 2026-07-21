@@ -7,6 +7,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 RECIPE = REPOSITORY_ROOT / "Makefile"
+UPDATE_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "update-ookla.yml"
 
 CASES = {
     ("aarch64", False): (
@@ -87,6 +88,31 @@ class RecipeTest(unittest.TestCase):
             "$(INSTALL_BIN) $(PKG_BUILD_DIR)/speedtest $(1)/usr/bin/speedtest",
             recipe,
         )
+
+    def test_update_workflow_policy(self):
+        self.assertTrue(UPDATE_WORKFLOW.is_file(), "update workflow is missing")
+        workflow = UPDATE_WORKFLOW.read_text(encoding="utf-8")
+
+        for required in (
+            "schedule:",
+            "workflow_dispatch:",
+            "contents: write",
+            "group:",
+            "python3 scripts/update_ookla.py",
+            "python3 -m unittest discover -s tests -v",
+            "github-actions[bot]",
+            "git push origin HEAD:main",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, workflow)
+
+        for forbidden in (
+            "actions/upload-artifact",
+            "actions/create-release",
+            "softprops/action-gh-release",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, workflow)
 
 
 if __name__ == "__main__":
