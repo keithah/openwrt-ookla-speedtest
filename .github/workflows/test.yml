@@ -1,4 +1,5 @@
 name: Test
+# actions/setup-python@v5 and actions/setup-node@v4 are pinned below.
 
 on:
   push:
@@ -12,12 +13,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
         with:
           python-version: "3.x"
 
-      - name: Run tests
+      - name: Set up Node.js for frontend syntax checks
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "20.x"
+
+      - name: Python contract tests
         run: python3 -m unittest discover -s tests -v
+
+      - name: Service contract
+        run: bash -x tests/test_service_contract.sh
+
+      - name: Frontend contract
+        run: node tests/test_frontend_contract.js
+
+      - name: Install layout contract
+        run: bash -x tests/install-test.sh
+
+      - name: GoodCloud integration contract
+        run: bash -x tests/goodcloud-contract-test.sh
+
+      - name: Stage package (repository-only check)
+        run: |
+          set -eu
+          test -f package/Makefile
+          grep -Eq '^PKGARCH:=all' package/Makefile
+          mkdir -p _stage
+          cp -a package/Makefile package/shared package/ookla-speedtest-webd package/luci-app-ookla-speedtest-web package/gl-app-ookla-speedtest-web _stage/
+          test -n "$(find _stage -type f -print -quit)"

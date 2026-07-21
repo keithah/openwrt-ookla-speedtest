@@ -24,7 +24,11 @@ mkdir "$ROOT/run/start.lock.d"; rmdir "$ROOT/run/start.lock.d"
 python3 -c 'import fcntl,time; f=open("'$ROOT'/run/start.lock","w"); fcntl.flock(f,fcntl.LOCK_EX); time.sleep(2)' & LP=$!; sleep .3
 printf '%s\n' '{"method":"start"}' | "$SVC" | grep -q 'busy'; kill $LP 2>/dev/null || true
 # oversized output
-printf '#!/bin/sh\npython3 -c "print(\"x\"*1100000)"\n' > "$ROOT/bin/speedtest"; chmod +x "$ROOT/bin/speedtest"
+cat > "$ROOT/bin/speedtest" <<'SH'
+#!/bin/sh
+python3 -c 'print("x" * 1100000)'
+SH
+chmod +x "$ROOT/bin/speedtest"
 printf '%s\n' '{"method":"start"}' | "$SVC" | grep -q 'output_too_large'
 # server discovery success then error
 printf '#!/bin/sh\nprintf "{\\"servers\\":[{\\"id\\":7}]}"\n' > "$ROOT/bin/speedtest"; chmod +x "$ROOT/bin/speedtest"

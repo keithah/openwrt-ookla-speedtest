@@ -69,7 +69,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             self.assertTrue(control.is_file(), control)
             text = control.read_text()
             self.assertIn("Package: " + name, text)
-            self.assertIn("Version: 1.0.0", text)
+            self.assertIn("Version: 1.0.1", text)
             for dep in deps:
                 self.assertRegex(text, rf"(?im)^Depends:.*\b{dep}\b")
         self.assertTrue((PACKAGE / "ookla-speedtest-webd/CONTROL/conffiles").is_file())
@@ -117,6 +117,21 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertIn("http://router/cgi-bin/luci/admin/services/ookla-speedtest-web", readme)
         self.assertRegex(readme, r"(?i)GL\.iNet.*Applications")
         self.assertRegex(readme, r"(?i)GoodCloud.*Remote Web Access")
+
+    def test_ci_and_release_workflow_contracts(self):
+        workflows = ROOT / ".github" / "workflows"
+        test_workflow = (workflows / "test.yml").read_text()
+        release_workflow = (workflows / "release.yml").read_text()
+        for marker in ("push:", "pull_request:", "actions/setup-python@v5", "actions/setup-node@v4",
+                       "python3 -m unittest", "tests/test_service_contract.sh", "tests/test_frontend_contract.js",
+                       "tests/install-test.sh", "tests/goodcloud-contract-test.sh",
+                       "stage", "package/Makefile"):
+            self.assertIn(marker, test_workflow)
+        for marker in ("workflow_dispatch:", "tags:", "PKG_VERSION", "PKG_RELEASE", "PKGARCH",
+                       "deterministic", "forbidden", "gh release create", "contents: write",
+                       "tag_name", "GITHUB_REF_NAME", "TAG_INPUT", "inputs.tag_name", "with:"):
+            self.assertIn(marker, release_workflow)
+        self.assertNotIn("secrets.", release_workflow)
 
     def test_service_lifecycle_files_have_safe_contract(self):
         service = PACKAGE / "ookla-speedtest-webd"
