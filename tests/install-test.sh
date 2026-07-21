@@ -26,10 +26,11 @@ test ! -f "$PKG/ookla-speedtest-webd/usr/bin/speedtest"
 for f in \
   ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd \
   ookla-speedtest-webd/etc/init.d/ookla-speedtest-webd \
-  luci-app-ookla-speedtest-web/usr/libexec/rpcd/ookla-speedtest-web \
-  gl-app-ookla-speedtest-web/usr/lib/oui-httpd/rpc/ookla-speedtest-web; do
+  luci-app-ookla-speedtest-web/usr/libexec/rpcd/ookla-speedtest-web; do
   test -x "$PKG/$f"
 done
+test -r "$PKG/gl-app-ookla-speedtest-web/usr/lib/oui-httpd/rpc/ookla-speedtest-web"
+test ! -x "$PKG/gl-app-ookla-speedtest-web/usr/lib/oui-httpd/rpc/ookla-speedtest-web"
 grep -q 'ookla-speedtest-cli' "$PKG/ookla-speedtest-webd/CONTROL/control"
 grep -q 'ookla-speedtest-webd' "$PKG/luci-app-ookla-speedtest-web/CONTROL/control"
 grep -q 'luci-app-ookla-speedtest-web' "$PKG/gl-app-ookla-speedtest-web/CONTROL/control"
