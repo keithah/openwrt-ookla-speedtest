@@ -16,6 +16,7 @@ const ljs=fs.readFileSync(path.join(luci,'www/luci-static/resources/view/ookla-s
 assert.match(ljs,/window\.SpeedtestWebAdapter/);
 const lrpc=fs.readFileSync(path.join(luci,'usr/libexec/rpcd/ookla-speedtest-web'),'utf8'); assert.match(lrpc,/list|call/); assert.match(lrpc,/OOKLA_SPEEDTEST_BIN/); assert.doesNotMatch(lrpc,/\$\(.*\)|`/);
 const gr=fs.readFileSync(path.join(gl,'usr/lib/oui-httpd/rpc/ookla-speedtest-web'),'utf8'); assert.match(gr,/status|servers|history|settings|start|local_download|local_upload/); assert.doesNotMatch(gr,/listen|port|password|credential/i);
-const gm=fs.readFileSync(path.join(gl,'usr/share/oui/menu.d/ookla-speedtest-web.json'),'utf8'); assert.match(gm,/Applications|ookla/i);
+const gm=JSON.parse(fs.readFileSync(path.join(gl,'usr/share/oui/menu.d/ookla-speedtest-web.json'),'utf8'));
+assert.strictEqual(gm.parent,'applications'); assert.strictEqual(gm.level,2); assert.strictEqual(gm.view,'ookla-speedtest-web'); assert.strictEqual(gm.title,'Ookla Speedtest');
 const gv=fs.readFileSync(path.join(gl,'www/views/gl-sdk4-ui-ookla-speedtest-web.common.js'),'utf8'); assert.match(gv,/window\.SpeedtestWebAdapter/);
 console.log('frontend contract ok');

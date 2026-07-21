@@ -1,3 +1,4 @@
 #!/bin/sh
-[ -n "$IPKG_INSTROOT" ] || /etc/init.d/rpcd reload >/dev/null 2>&1 || true
+[ -n "$IPKG_INSTROOT" ] && exit 0
+/etc/init.d/nginx reload >/dev/null 2>&1 || true
 exit 0

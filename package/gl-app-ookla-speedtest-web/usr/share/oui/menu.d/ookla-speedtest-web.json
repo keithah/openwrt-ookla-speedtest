@@ -1,1 +1,10 @@
-{"applications":[{"id":"ookla-speedtest-web","title":"Ookla Speedtest","path":"/cgi-bin/luci/admin/services/ookla-speedtest-web","icon":"speedtest"}]}
+{
+  "index": 103,
+  "view": "ookla-speedtest-web",
+  "title": "Ookla Speedtest",
+  "level": 2,
+  "parent": "applications",
+  "parent_icon": "application",
+  "parent_index": 55,
+  "show_mode": ["router", "wds", "relay", "mesh", "ap"]
+}

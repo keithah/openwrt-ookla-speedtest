@@ -70,7 +70,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             self.assertTrue(control.is_file(), control)
             text = control.read_text()
             self.assertIn("Package: " + name, text)
-            self.assertIn("Version: 1.1.3", text)
+            self.assertIn("Version: 1.1.4", text)
             for dep in deps:
                 self.assertRegex(text, rf"(?im)^Depends:.*\b{dep}\b")
         self.assertTrue((PACKAGE / "ookla-speedtest-webd/CONTROL/conffiles").is_file())
@@ -160,6 +160,8 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertNotRegex(postinst, r"pytest|test_")
         luci_postinst = (PACKAGE / "luci-app-ookla-speedtest-web/CONTROL/postinst").read_text()
         self.assertIn("rpcd", luci_postinst)
+        gl_postinst = (PACKAGE / "gl-app-ookla-speedtest-web/CONTROL/postinst").read_text()
+        self.assertIn("nginx", gl_postinst)
 
     def test_rpcd_acl_is_limited_to_fixed_methods(self):
         acl = PACKAGE / "luci-app-ookla-speedtest-web/usr/share/rpcd/acl.d/luci-app-ookla-speedtest-web.json"

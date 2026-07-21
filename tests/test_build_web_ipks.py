@@ -36,10 +36,10 @@ class WebIpkBuilderTests(unittest.TestCase):
             packages = {path.name: members(path) for path in Path(output).glob("*.ipk")}
         self.assertEqual(3, len(packages))
         for name, (control, _, _) in packages.items():
-            self.assertIn("Version: 1.1.3-1", control, name)
-        self.assertIn("postinst", packages["luci-app-ookla-speedtest-web_1.1.3-1_all.ipk"][1])
-        luci = packages["luci-app-ookla-speedtest-web_1.1.3-1_all.ipk"][2]
-        glinet = packages["gl-app-ookla-speedtest-web_1.1.3-1_all.ipk"][2]
+            self.assertIn("Version: 1.1.4-1", control, name)
+        self.assertIn("postinst", packages["luci-app-ookla-speedtest-web_1.1.4-1_all.ipk"][1])
+        luci = packages["luci-app-ookla-speedtest-web_1.1.4-1_all.ipk"][2]
+        glinet = packages["gl-app-ookla-speedtest-web_1.1.4-1_all.ipk"][2]
         for filename in ("index.html", "app.js", "styles.css"):
             self.assertIn("www/luci-static/resources/ookla-speedtest-web/" + filename, luci)
             self.assertIn("www/ookla-speedtest-web/" + filename, glinet)
