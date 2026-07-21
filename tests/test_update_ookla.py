@@ -38,6 +38,45 @@ def elf_header(elf_class, machine, flags=None):
     return bytes(header)
 
 
+def elf_with_program_headers(
+    elf_class,
+    machine,
+    flags,
+    program_types,
+    *,
+    entry_size=None,
+    truncate=0,
+):
+    header = bytearray(elf_header(elf_class, machine, flags))
+    if elf_class == 1:
+        offset_field, entry_size_field, count_field = 28, 42, 44
+        standard_entry_size = 32
+        offset_size = 4
+    else:
+        offset_field, entry_size_field, count_field = 32, 54, 56
+        standard_entry_size = 56
+        offset_size = 8
+
+    program_offset = len(header)
+    entry_size = standard_entry_size if entry_size is None else entry_size
+    header[offset_field : offset_field + offset_size] = program_offset.to_bytes(
+        offset_size, "little"
+    )
+    header[entry_size_field : entry_size_field + 2] = entry_size.to_bytes(
+        2, "little"
+    )
+    header[count_field : count_field + 2] = len(program_types).to_bytes(
+        2, "little"
+    )
+
+    table = bytearray(entry_size * len(program_types))
+    for index, program_type in enumerate(program_types):
+        start = index * entry_size
+        table[start : start + 4] = program_type.to_bytes(4, "little")
+    payload = bytes(header + table)
+    return payload[:-truncate] if truncate else payload
+
+
 def archive_with_speedtest(payload, *, directory=False, member_name="speedtest"):
     output = io.BytesIO()
     with tarfile.open(fileobj=output, mode="w:gz") as archive:
@@ -213,6 +252,55 @@ class ArchiveValidationTest(unittest.TestCase):
                 data = archive_with_speedtest(elf_header(1, 40, opposite_flag))
                 with self.assertRaises(UpdateError):
                     validate_archive(arch, data)
+
+    def test_rejects_pt_interp_for_each_architecture(self):
+        for arch, (elf_class, machine, flags) in EXPECTED_ELF.items():
+            with self.subTest(arch=arch):
+                executable = elf_with_program_headers(
+                    elf_class,
+                    machine,
+                    flags,
+                    (2, 3),
+                )
+                with self.assertRaisesRegex(UpdateError, "interpreter"):
+                    validate_archive(arch, archive_with_speedtest(executable))
+
+    def test_accepts_pt_dynamic_without_an_interpreter(self):
+        for arch, (elf_class, machine, flags) in EXPECTED_ELF.items():
+            with self.subTest(arch=arch):
+                executable = elf_with_program_headers(
+                    elf_class,
+                    machine,
+                    flags,
+                    (2,),
+                )
+                validate_archive(arch, archive_with_speedtest(executable))
+
+    def test_rejects_truncated_program_header_table(self):
+        for arch, (elf_class, machine, flags) in EXPECTED_ELF.items():
+            with self.subTest(arch=arch):
+                executable = elf_with_program_headers(
+                    elf_class,
+                    machine,
+                    flags,
+                    (1,),
+                    truncate=1,
+                )
+                with self.assertRaisesRegex(UpdateError, "program header"):
+                    validate_archive(arch, archive_with_speedtest(executable))
+
+    def test_rejects_malformed_program_header_entry_size(self):
+        for arch, (elf_class, machine, flags) in EXPECTED_ELF.items():
+            with self.subTest(arch=arch):
+                executable = elf_with_program_headers(
+                    elf_class,
+                    machine,
+                    flags,
+                    (1,),
+                    entry_size=3,
+                )
+                with self.assertRaisesRegex(UpdateError, "program header"):
+                    validate_archive(arch, archive_with_speedtest(executable))
 
     def test_rejects_truncated_elf_header(self):
         for arch in EXPECTED_ELF:

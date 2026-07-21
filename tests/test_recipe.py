@@ -144,6 +144,11 @@ class RecipeTest(unittest.TestCase):
             values = self.assert_supported_recipe_invariants(updated_recipe)
 
         self.assertEqual({"1.3.0"}, {value["PKG_VERSION"] for value in values})
+        for expected_suffix, value in zip(CASES.values(), values):
+            self.assertEqual(
+                SIMULATED_UPDATE_HASHES[expected_suffix],
+                value["PKG_HASH"],
+            )
 
     def test_unsupported_architecture_has_no_supported_suffix(self):
         values = self.evaluate_recipe("x86_64")

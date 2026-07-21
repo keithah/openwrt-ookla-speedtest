@@ -78,12 +78,13 @@ def validate_archive(arch, data):
             extracted = archive.extractfile(member)
             if extracted is None:
                 raise UpdateError("archive speedtest member cannot be read")
-            header = extracted.read(64)
+            executable = extracted.read()
     except (KeyError, tarfile.TarError, EOFError, OSError) as error:
         raise UpdateError(f"invalid archive: {error}") from error
 
     expected_class, expected_machine, expected_float_flag = EXPECTED_ELF[arch]
     required_size = 64 if expected_class == 2 else 52
+    header = executable[:required_size]
     if len(header) < required_size:
         raise UpdateError("speedtest has a truncated ELF header")
     if header[:4] != b"\x7fELF":
@@ -101,6 +102,38 @@ def validate_archive(arch, data):
         opposite_flag = 0x200 if expected_float_flag == 0x400 else 0x400
         if not flags & expected_float_flag or flags & opposite_flag:
             raise UpdateError(f"speedtest has the wrong ARM float ABI for {arch}")
+
+    _validate_program_headers(executable, expected_class, required_size)
+
+
+def _validate_program_headers(executable, elf_class, header_size):
+    if elf_class == 1:
+        offset = int.from_bytes(executable[28:32], "little")
+        entry_size = int.from_bytes(executable[42:44], "little")
+        entry_count = int.from_bytes(executable[44:46], "little")
+        expected_entry_size = 32
+    else:
+        offset = int.from_bytes(executable[32:40], "little")
+        entry_size = int.from_bytes(executable[54:56], "little")
+        entry_count = int.from_bytes(executable[56:58], "little")
+        expected_entry_size = 56
+
+    if entry_count == 0:
+        return
+    if entry_size != expected_entry_size or offset < header_size:
+        raise UpdateError("speedtest has malformed ELF program headers")
+
+    table_end = offset + entry_size * entry_count
+    if table_end > len(executable):
+        raise UpdateError("speedtest has a truncated ELF program header table")
+
+    for index in range(entry_count):
+        entry_offset = offset + index * entry_size
+        program_type = int.from_bytes(
+            executable[entry_offset : entry_offset + 4], "little"
+        )
+        if program_type == 3:
+            raise UpdateError("speedtest ELF requires a dynamic interpreter")
 
 
 def _replace_assignment(text, name, value):
