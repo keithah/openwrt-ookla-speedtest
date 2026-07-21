@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
-import os,sys,json,time,subprocess,fcntl,re,tempfile
+import os,sys,json,time,subprocess,fcntl,re,tempfile,errno
 run=os.environ.get('OOKLA_WEBD_RUN_DIR','/var/run/ookla-speedtest-webd'); hist=os.environ.get('OOKLA_WEBD_HISTORY','/etc/ookla-speedtest-webd/history.jsonl'); binary=os.environ.get('OOKLA_SPEEDTEST_BIN','/usr/bin/speedtest'); maxout=1024*1024
 os.makedirs(run,exist_ok=True); os.makedirs(os.path.dirname(hist),exist_ok=True)
+def retention():
+ try:
+  v=os.environ.get('OOKLA_HISTORY_RETENTION','100')
+  if not re.fullmatch(r'[0-9]+',v): raise ValueError
+  n=int(v)
+  if n<0 or n>10000: raise ValueError
+  return n
+ except Exception: return 100
 def out(x): print(json.dumps(x,separators=(',',':')))
 def lock():
  p=os.path.join(run,'start.lock'); f=open(p,'w')
  try: fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB); return f,None
- except Exception:
+ except BlockingIOError:
+  f.close(); return None,None
+ except OSError as e:
+  if e.errno not in (errno.ENOSYS,errno.ENOTSUP,errno.EOPNOTSUPP):
+   f.close(); return 'storage_error',None
   f.close(); d=p+'.d'
   try: os.mkdir(d); return None,d
   except Exception: return None,None
@@ -19,13 +31,25 @@ def unlock(x):
   try: os.rmdir(d)
   except: pass
 statefile=os.path.join(run,'state.json')
-def writestate(s):
- t=statefile+'.tmp'; open(t,'w').write(json.dumps(s,separators=(',',':'))); os.replace(t,statefile)
+_servers_cache=None; _servers_cache_at=0
+def atomic_write(path,data):
+ d=os.path.dirname(path) or '.'; fd,tmp=tempfile.mkstemp(prefix='.tmp-',dir=d)
+ try:
+  with os.fdopen(fd,'w') as f: f.write(data); f.flush(); os.fsync(f.fileno())
+  os.replace(tmp,path)
+  try:
+   dfd=os.open(d,os.O_DIRECTORY); os.fsync(dfd); os.close(dfd)
+  except OSError: pass
+ except Exception:
+  try: os.unlink(tmp)
+  except OSError: pass
+  raise
+def writestate(s): atomic_write(statefile,json.dumps(s,separators=(',',':')))
 def writehist(items):
- t=hist+'.tmp'; open(t,'w').write(''.join(json.dumps(x,separators=(',',':'))+'\n' for x in items)); os.replace(t,hist)
+ atomic_write(hist,''.join(json.dumps(x,separators=(',',':'))+'\n' for x in items))
 def readhist():
  try:
-  lines=open(hist).read().splitlines(); return [json.loads(x) for x in lines[-int(os.environ.get('OOKLA_HISTORY_RETENTION','100')):] if x.strip()]
+  lines=open(hist).read().splitlines(); n=retention(); return [json.loads(x) for x in (lines if n==0 else lines[-n:]) if x.strip()]
  except: return []
 def main(req):
  m=req.get('method','')
@@ -37,23 +61,29 @@ def main(req):
  if m in ('clear_history','delete_history'):
   lk=lock()
   if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
+  if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
   try:
    items=[] if m=='clear_history' else [x for x in readhist() if str(x.get('id'))!=str(req.get('id'))]
    writehist(items); return {'ok':True}
   finally: unlock(lk)
- if m=='settings': return {'ok':True,'retention':int(os.environ.get('OOKLA_HISTORY_RETENTION','100'))}
+ if m=='settings': return {'ok':True,'retention':retention()}
  if m=='servers':
+  global _servers_cache,_servers_cache_at
+  if _servers_cache is not None and time.time()-_servers_cache_at < 30: return {'ok':True,'servers':_servers_cache}
   try:
    with tempfile.TemporaryFile() as tf:
     p=subprocess.run([binary,'--servers','--format=json'],stdout=tf,stderr=subprocess.DEVNULL,timeout=30); tf.seek(0); raw=tf.read(maxout+1)
    if p.returncode or len(raw)>maxout: raise ValueError('server_output_invalid')
-   data=json.loads(raw); return {'ok':True,'servers':data.get('servers',data if isinstance(data,list) else [])}
- except Exception as e: return {'ok':False,'error':{'code':'malformed_output'}}
+   data=json.loads(raw); rows=data.get('servers',data if isinstance(data,list) else [])
+   _servers_cache=[{'id':r.get('id'),'name':r.get('name') or r.get('sponsor'),'host':r.get('host'),'port':r.get('port'),'lat':r.get('lat'),'lon':r.get('lon')} for r in rows if isinstance(r,dict)]
+   _servers_cache_at=time.time(); return {'ok':True,'servers':_servers_cache}
+  except Exception as e: return {'ok':False,'error':{'code':'malformed_output'}}
  if m!='start': return {'ok':False,'error':{'code':'unknown_method'}}
  sid=req.get('server_id')
  if sid is not None and (not re.fullmatch(r'[0-9]+',str(sid)) or int(sid)<0): return {'ok':False,'error':{'code':'invalid_server_id'}}
  lk=lock()
  if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
+ if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
  try:
   writestate({'state':'running','started':int(time.time())})
   cmd=[binary,'--accept-license','--format=json']
@@ -65,14 +95,14 @@ def main(req):
   try: result=json.loads(raw)
   except: raise ValueError('malformed_json')
   rec={'timestamp':int(time.time()),'server_id':result.get('server',{}).get('id',sid),'server':result.get('server',{}),'latency':result.get('ping',{}).get('latency'),'download':result.get('download',{}),'upload':result.get('upload',{}),'isp':result.get('isp'),'outcome':'success'}
-  items=readhist()+[rec]; items=items[-int(os.environ.get('OOKLA_HISTORY_RETENTION','100')):]
-  t=hist+'.tmp'; open(t,'w').write(''.join(json.dumps(x,separators=(',',':'))+'\n' for x in items)); os.replace(t,hist)
+  n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]
+  writehist(items)
   writestate({'state':'result','result':result,'finished':int(time.time())})
   return {'ok':True,'result':result}
  except Exception as e:
   code='timeout' if isinstance(e,subprocess.TimeoutExpired) else ('output_too_large' if str(e)=='oversized_output' else ('speedtest_failed' if str(e)=='speedtest_failed' else 'malformed_output'))
   try:
-   rec={'timestamp':int(time.time()),'outcome':'error','error':{'code':code}}; items=(readhist()+[rec])[-int(os.environ.get('OOKLA_HISTORY_RETENTION','100')):]; t=hist+'.tmp'; open(t,'w').write(''.join(json.dumps(x,separators=(',',':'))+'\n' for x in items)); os.replace(t,hist); writestate({'state':'error','error':{'code':code}})
+   rec={'timestamp':int(time.time()),'outcome':'error','error':{'code':code}}; n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items); writestate({'state':'error','error':{'code':code}})
   except: pass
   return {'ok':False,'error':{'code':code}}
  finally: unlock(lk)
