@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+import os,sys,json,time,subprocess,fcntl,re,tempfile
+run=os.environ.get('OOKLA_WEBD_RUN_DIR','/var/run/ookla-speedtest-webd'); hist=os.environ.get('OOKLA_WEBD_HISTORY','/etc/ookla-speedtest-webd/history.jsonl'); binary=os.environ.get('OOKLA_SPEEDTEST_BIN','/usr/bin/speedtest'); maxout=1024*1024
+os.makedirs(run,exist_ok=True); os.makedirs(os.path.dirname(hist),exist_ok=True)
+def out(x): print(json.dumps(x,separators=(',',':')))
+def lock():
+ p=os.path.join(run,'start.lock'); f=open(p,'w')
+ try: fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB); return f,None
+ except Exception:
+  f.close(); d=p+'.d'
+  try: os.mkdir(d); return None,d
+  except Exception: return None,None
+def unlock(x):
+ f,d=x
+ if f:
+  try: fcntl.flock(f,fcntl.LOCK_UN); f.close()
+  except: pass
+ if d:
+  try: os.rmdir(d)
+  except: pass
+statefile=os.path.join(run,'state.json')
+def writestate(s):
+ t=statefile+'.tmp'; open(t,'w').write(json.dumps(s,separators=(',',':'))); os.replace(t,statefile)
+def writehist(items):
+ t=hist+'.tmp'; open(t,'w').write(''.join(json.dumps(x,separators=(',',':'))+'\n' for x in items)); os.replace(t,hist)
+def readhist():
+ try:
+  lines=open(hist).read().splitlines(); return [json.loads(x) for x in lines[-int(os.environ.get('OOKLA_HISTORY_RETENTION','100')):] if x.strip()]
+ except: return []
+def main(req):
+ m=req.get('method','')
+ if m=='status':
+  try: st=json.load(open(os.path.join(run,'state.json')))
+  except: st={'state':'idle'}
+  return st
+ if m=='history': return {'ok':True,'items':readhist()}
+ if m in ('clear_history','delete_history'):
+  lk=lock()
+  if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
+  try:
+   items=[] if m=='clear_history' else [x for x in readhist() if str(x.get('id'))!=str(req.get('id'))]
+   writehist(items); return {'ok':True}
+  finally: unlock(lk)
+ if m=='settings': return {'ok':True,'retention':int(os.environ.get('OOKLA_HISTORY_RETENTION','100'))}
+ if m=='servers':
+  try:
+   with tempfile.TemporaryFile() as tf:
+    p=subprocess.run([binary,'--servers','--format=json'],stdout=tf,stderr=subprocess.DEVNULL,timeout=30); tf.seek(0); raw=tf.read(maxout+1)
+   if p.returncode or len(raw)>maxout: raise ValueError('server_output_invalid')
+   data=json.loads(raw); return {'ok':True,'servers':data.get('servers',data if isinstance(data,list) else [])}
+ except Exception as e: return {'ok':False,'error':{'code':'malformed_output'}}
+ if m!='start': return {'ok':False,'error':{'code':'unknown_method'}}
+ sid=req.get('server_id')
+ if sid is not None and (not re.fullmatch(r'[0-9]+',str(sid)) or int(sid)<0): return {'ok':False,'error':{'code':'invalid_server_id'}}
+ lk=lock()
+ if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
+ try:
+  writestate({'state':'running','started':int(time.time())})
+  cmd=[binary,'--accept-license','--format=json']
+  if sid is not None: cmd += ['--server-id',str(int(sid))]
+  with tempfile.TemporaryFile() as tf:
+   p=subprocess.run(cmd,stdout=tf,stderr=subprocess.DEVNULL,timeout=120); tf.seek(0); raw=tf.read(maxout+1)
+  if len(raw)>maxout: raise ValueError('oversized_output')
+  if p.returncode: raise ValueError('speedtest_failed')
+  try: result=json.loads(raw)
+  except: raise ValueError('malformed_json')
+  rec={'timestamp':int(time.time()),'server_id':result.get('server',{}).get('id',sid),'server':result.get('server',{}),'latency':result.get('ping',{}).get('latency'),'download':result.get('download',{}),'upload':result.get('upload',{}),'isp':result.get('isp'),'outcome':'success'}
+  items=readhist()+[rec]; items=items[-int(os.environ.get('OOKLA_HISTORY_RETENTION','100')):]
+  t=hist+'.tmp'; open(t,'w').write(''.join(json.dumps(x,separators=(',',':'))+'\n' for x in items)); os.replace(t,hist)
+  writestate({'state':'result','result':result,'finished':int(time.time())})
+  return {'ok':True,'result':result}
+ except Exception as e:
+  code='timeout' if isinstance(e,subprocess.TimeoutExpired) else ('output_too_large' if str(e)=='oversized_output' else ('speedtest_failed' if str(e)=='speedtest_failed' else 'malformed_output'))
+  try:
+   rec={'timestamp':int(time.time()),'outcome':'error','error':{'code':code}}; items=(readhist()+[rec])[-int(os.environ.get('OOKLA_HISTORY_RETENTION','100')):]; t=hist+'.tmp'; open(t,'w').write(''.join(json.dumps(x,separators=(',',':'))+'\n' for x in items)); os.replace(t,hist); writestate({'state':'error','error':{'code':code}})
+  except: pass
+  return {'ok':False,'error':{'code':code}}
+ finally: unlock(lk)
+try: req=json.loads(sys.stdin.read()); out(main(req))
+except Exception as e: out({'ok':False,'error':{'code':'invalid_request'}})
