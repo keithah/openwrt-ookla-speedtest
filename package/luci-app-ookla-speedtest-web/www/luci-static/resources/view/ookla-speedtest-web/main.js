@@ -13,7 +13,9 @@ return view.extend({
   var root = E('div', {'class':'ookla-speedtest-web'});
   root.appendChild(E('link', {rel:'stylesheet', href:L.resource('ookla-speedtest-web/styles.css')}));
   var frame=E('iframe', {title:'Ookla Speedtest dashboard', style:'width:100%;min-height:760px;border:0'});
-  frame.contentWindow.SpeedtestWebAdapter={call:function(m,p){if(m==='runTest')m='start';return call[m](p||{});},subscribe:function(){},navigate:function(){}};
+  var bridge={call:function(m,p){if(m==='runTest')m='start';return call[m](p||{});},subscribe:function(){},navigate:function(){}};
+  window.SpeedtestWebAdapter=bridge;
+  frame.contentWindow.SpeedtestWebAdapter=bridge;
   frame.src=L.resource('ookla-speedtest-web/index.html'); root.appendChild(frame); return root;
  },
  handleSaveApply: null,
