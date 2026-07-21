@@ -342,7 +342,7 @@ class UpdateTransactionTest(unittest.TestCase):
 
 
 class CliContractTest(unittest.TestCase):
-    def test_http_failure_becomes_update_error_and_uses_timeout(self):
+    def test_http_failure_becomes_update_error_and_identifies_updater(self):
         with mock.patch.object(
             updater.urllib.request,
             "urlopen",
@@ -351,7 +351,14 @@ class CliContractTest(unittest.TestCase):
             with self.assertRaisesRegex(UpdateError, "failed to fetch"):
                 updater._download("https://page.test/cli")
 
-        urlopen.assert_called_once_with("https://page.test/cli", timeout=30)
+        urlopen.assert_called_once()
+        request = urlopen.call_args.args[0]
+        self.assertIsInstance(request, urllib.request.Request)
+        self.assertEqual(
+            "openwrt-ookla-speedtest-cli-updater/1.0",
+            request.get_header("User-agent"),
+        )
+        self.assertEqual(30, urlopen.call_args.kwargs["timeout"])
 
     def test_main_returns_nonzero_and_reports_update_error(self):
         error = io.StringIO()

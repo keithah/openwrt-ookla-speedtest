@@ -125,8 +125,12 @@ def render_makefile(text, version, hashes):
 
 
 def _download(url):
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "openwrt-ookla-speedtest-cli-updater/1.0"},
+    )
     try:
-        with urllib.request.urlopen(url, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:
             status = getattr(response, "status", 200)
             if status is None:
                 status = 200
