@@ -53,6 +53,10 @@ async function flush() {
   for (let i = 0; i < 8; i++) await Promise.resolve();
 }
 
+async function flushUntil(predicate) {
+  for (let i = 0; i < 20 && !predicate(); i++) await flush();
+}
+
 function harness(handler, options) {
   const ids = ['live-gauge', 'gauge-dial', 'gauge-readout', 'gauge-needle', 'gauge-value', 'gauge-unit',
     'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
@@ -319,6 +323,50 @@ async function testCancelDuringLocalStopsAfterInflightBatch() {
   assert.equal(h.calls.some(call => call.method === 'local_upload'), false);
   assert.equal(h.calls.some(call => call.method === 'record_local'), false);
   assert.equal(h.app.state.status, 'cancelled');
+  assert.equal(h.app.state.results.local, null);
+}
+
+async function testCancelDuringLocalRecordDeletesPersistedItem() {
+  const record = deferred();
+  const h = harness((method, params) => {
+    if (method === 'local_download') return Promise.resolve({ ok: true, bytes: params.bytes });
+    if (method === 'local_upload') return Promise.resolve({ ok: true, bytes: params.data.length });
+    if (method === 'record_local') return record.promise;
+    if (method === 'delete_history') return Promise.resolve({ ok: true });
+    throw new Error('unexpected ' + method);
+  }, { local: { measurementMs: 3000, maxBatches: 1 } });
+  const run = h.app.runMode('device-router');
+  await flushUntil(() => h.calls.some(call => call.method === 'record_local'));
+  assert.equal(h.calls.filter(call => call.method === 'record_local').length, 1);
+  await h.app.cancelTest();
+  record.resolve({ ok: true, item: { id: 'cancelled-local-id' } });
+  await run;
+  const deletes = h.calls.filter(call => call.method === 'delete_history');
+  assert.equal(deletes.length, 1);
+  assert.equal(deletes[0].params.id, 'cancelled-local-id');
+  assert.equal(h.app.state.status, 'cancelled');
+  assert.equal(h.app.state.results.local, null);
+  assert.equal(h.calls.some(call => call.method === 'history'), false);
+}
+
+async function testFailedCancelledLocalCleanupSurfacesStableError() {
+  const record = deferred();
+  const h = harness((method, params) => {
+    if (method === 'local_download') return Promise.resolve({ ok: true, bytes: params.bytes });
+    if (method === 'local_upload') return Promise.resolve({ ok: true, bytes: params.data.length });
+    if (method === 'record_local') return record.promise;
+    if (method === 'delete_history') return Promise.reject(new Error('storage unavailable'));
+    throw new Error('unexpected ' + method);
+  }, { local: { measurementMs: 3000, maxBatches: 1 } });
+  const run = h.app.runMode('device-router');
+  await flushUntil(() => h.calls.some(call => call.method === 'record_local'));
+  await h.app.cancelTest();
+  record.resolve({ ok: true, item: { id: 'stranded-local-id' } });
+  await run;
+  assert.equal(h.calls.filter(call => call.method === 'delete_history').length, 1);
+  assert.equal(h.app.state.status, 'error');
+  assert.equal(h.app.state.errorPath, 'local');
+  assert.equal(h.app.state.errorCode, 'local_cleanup_failed');
   assert.equal(h.app.state.results.local, null);
 }
 
@@ -619,6 +667,8 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testTermsAcceptanceResumesLiveRun();
   await testDeviceRouterKeepsLocalBridge();
   await testCancelDuringLocalStopsAfterInflightBatch();
+  await testCancelDuringLocalRecordDeletesPersistedItem();
+  await testFailedCancelledLocalCleanupSurfacesStableError();
   await testBothRunsLocalThenInternetAndKeepsSeparateResults();
   await testBothFailureKeepsCompletedLocalAndIdentifiesInternet();
   await testBothLocalFailureNeverStartsInternet();
