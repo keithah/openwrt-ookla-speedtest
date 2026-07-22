@@ -339,6 +339,41 @@ async function testCancelDuringLocalStopsAfterInflightBatch() {
   assert.equal(h.calls.find(call => call.method === 'cancel_local').params.run_id, '22222222222222222222222222222222');
 }
 
+async function testTransientLocalCancelFailureCanBeRetried() {
+  const batch = deferred();
+  let cancelAttempts = 0;
+  const h = harness((method, params) => {
+    if (method === 'begin_local') return Promise.resolve({ ok: true, run_id: '12121212121212121212121212121212', state: 'active' });
+    if (method === 'local_download' && params.bytes === 1024) return Promise.resolve({ ok: true, bytes: params.bytes });
+    if (method === 'local_download') return batch.promise;
+    if (method === 'cancel_local') {
+      cancelAttempts += 1;
+      if (cancelAttempts === 1) {
+        const error = new Error('service busy');
+        error.code = 'busy';
+        return Promise.reject(error);
+      }
+      return Promise.resolve({ ok: true, run_id: params.run_id, state: 'cancelled' });
+    }
+    throw new Error('unexpected ' + method);
+  }, { local: { measurementMs: 3000, maxBatches: 2 } });
+  const run = h.app.runMode('device-router');
+  await flushUntil(() => h.calls.filter(call => call.method === 'local_download' && call.params.bytes === 32768).length === 8);
+
+  const first = await h.app.cancelTest();
+  assert.equal(first.error.code, 'busy');
+  assert.equal(h.app.state.cancelRequested, false);
+  assert.equal(h.app.state.status, 'running');
+
+  const second = await h.app.cancelTest();
+  assert.equal(second.state, 'cancelled');
+  assert.equal(h.calls.filter(call => call.method === 'cancel_local').length, 2);
+  assert.equal(h.app.state.status, 'cancelled');
+  batch.resolve({ ok: true, bytes: 32768 });
+  await run;
+  assert.equal(h.app.state.status, 'cancelled');
+}
+
 async function testAcknowledgedLocalCancelWinsLateBatchRejection() {
   const requests = Array.from({ length: 8 }, () => deferred());
   let requestIndex = 0;
@@ -902,6 +937,7 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testTermsAcceptanceResumesLiveRun();
   await testDeviceRouterKeepsLocalBridge();
   await testCancelDuringLocalStopsAfterInflightBatch();
+  await testTransientLocalCancelFailureCanBeRetried();
   await testAcknowledgedLocalCancelWinsLateBatchRejection();
   await testCancelDuringPendingLocalBeginCancelsBeforeProbes();
   await testCancelWinsAgainstInflightLocalRecord();

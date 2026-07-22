@@ -109,17 +109,19 @@ function requestCancel(runToken,jobId){
   },function(error){if(cancelPromiseToken===runToken){cancelPromise=null;cancelPromiseToken=null}return cancelFailed(error,runToken,jobId)});
   return cancelPromise;
 }
+function restoreLocalCancel(runToken){if(!ownsRun(runToken))return;state.cancelRequested=false;if(state.status==='cancelling')state.status='running';render();notify()}
 function requestLocalCancel(runToken,runId){
   if(localCancelPromise&&localCancelPromiseToken===runToken)return localCancelPromise;
-  if(localCancelOutcome&&localCancelOutcomeToken===runToken){if(localCancelOutcome.state==='committed'&&ownsRun(runToken)){state.cancelRequested=false;if(state.status==='cancelling')state.status='running';render();notify()}return Promise.resolve(localCancelOutcome)}
+  if(localCancelOutcome&&localCancelOutcomeToken===runToken&&(localCancelOutcome.state==='committed'||localCancelOutcome.state==='cancelled')){if(localCancelOutcome.state==='committed')restoreLocalCancel(runToken);return Promise.resolve(localCancelOutcome)}
+  if(localCancelOutcomeToken===runToken){localCancelOutcome=null;localCancelOutcomeToken=null;restoreLocalCancel(runToken)}
   state.cancelRequested=true;state.status='cancelling';render();notify();localCancelPromiseToken=runToken;localCancelOutcome=null;localCancelOutcomeToken=runToken;
   localCancelPromise=checked('cancel_local',{run_id:runId}).then(function(response){
-    if(localCancelOutcomeToken===runToken)localCancelOutcome=response;if(localCancelPromiseToken===runToken){localCancelPromise=null;localCancelPromiseToken=null}if(!ownsRun(runToken))return response;
-    if(response.state!=='cancelled')throw liveError('cancel_not_acknowledged');state.status='cancelled';state.phase='cancelled';render();notify();return response;
+    var terminal=response.state==='cancelled'||response.state==='committed';if(localCancelOutcomeToken===runToken){localCancelOutcome=terminal?response:null;if(!terminal)localCancelOutcomeToken=null}if(localCancelPromiseToken===runToken){localCancelPromise=null;localCancelPromiseToken=null}if(!ownsRun(runToken))return response;
+    if(response.state==='committed'){restoreLocalCancel(runToken);return response}if(response.state!=='cancelled'){restoreLocalCancel(runToken);return{ok:false,error:{code:'cancel_not_acknowledged'}}}state.status='cancelled';state.phase='cancelled';render();notify();return response;
   },function(error){
     var outcome=error.code==='too_late'?{ok:false,state:'committed',error:{code:'too_late'}}:{ok:false,error:{code:error.code||'transport_error'}};
-    if(localCancelOutcomeToken===runToken)localCancelOutcome=outcome;if(localCancelPromiseToken===runToken){localCancelPromise=null;localCancelPromiseToken=null}if(!ownsRun(runToken))return{ok:false,error:{code:'stale_local_test'}};
-    state.cancelRequested=false;if(error.code==='too_late'){if(state.status==='cancelling')state.status='running'}else state.status='running';render();notify();return outcome;
+    if(localCancelOutcomeToken===runToken){localCancelOutcome=error.code==='too_late'?outcome:null;if(error.code!=='too_late')localCancelOutcomeToken=null}if(localCancelPromiseToken===runToken){localCancelPromise=null;localCancelPromiseToken=null}if(!ownsRun(runToken))return{ok:false,error:{code:'stale_local_test'}};
+    restoreLocalCancel(runToken);return outcome;
   });return localCancelPromise;
 }
 function internetTest(runToken){if(runToken==null)runToken=startRun();var params={};if(state.server.id)params.server_id=state.server.id;state.pollFailures=0;return checked('start_live',params).then(function(started){if(!ownsRun(runToken))throw liveError('stale_live_job');if(!started.job_id)throw liveError('malformed_live_status');state.activeJob=started.job_id;if(state.cancelRequested)return requestCancel(runToken,started.job_id).then(function(outcome){if(outcome.ok)throw liveError('cancelled');return pollLive(started.job_id,runToken)});state.status='running';state.phase='ping';render();notify();return pollLive(started.job_id,runToken)})}
