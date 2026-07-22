@@ -6,6 +6,7 @@ var pollTimer=null,pollWake=null,pollTimerToken=null,cancelPromise=null,cancelPr
 var state={view:'home',mode:'router-internet',status:'idle',phase:'idle',progress:0,gaugeValue:0,gaugeUnit:'Mbps',gaugeScale:100,traces:{download:[],upload:[]},activeJob:null,localRunId:null,cancelRequested:false,pollFailures:0,errorPath:null,errorCode:null,failedPhase:null,failedMode:null,download:null,upload:null,ping:null,jitter:null,loss:null,server:{name:'Auto',sponsor:'',city:'',latency:'—'},history:[],results:{internet:null,local:null},isp:'ISP',connection:'Connection',network:null,range:7,servers:[],pendingMode:null};
 function el(id){return document.getElementById(id)}
 function text(node,value){if(node)node.textContent=value}
+function setHidden(node,hidden){if(!node)return;node.hidden=hidden;if(hidden)node.setAttribute('hidden','');else node.removeAttribute('hidden')}
 function notify(){listeners.forEach(function(fn){fn(state)})}
 function subscribe(fn){listeners.push(fn);return function(){listeners=listeners.filter(function(x){return x!==fn})}}
 function navigate(view){state.view=view;render();notify()}
@@ -57,8 +58,8 @@ function applyLiveStatus(payload,jobId){
     if(payload.result.ping&&payload.result.ping.jitter!=null)liveNumber(payload.result.ping.jitter,100000);
     if(payload.result.packetLoss!=null)liveNumber(payload.result.packetLoss,100);
   }
-  state.phase=phase;state.status=phase==='complete'?'done':'running';
-  if(phase==='complete')clearPollWake();
+  state.phase=phase;state.status=backendState==='complete'?'done':'running';
+  if(backendState==='complete')clearPollWake();
   if(progress!=null)state.progress=progress*100;
   if(ping!=null)state.ping=ping;
   if(jitter!=null)state.jitter=jitter;
@@ -149,14 +150,14 @@ function renderGauge(){
   var angle=SpeedtestGauge.angleFor(Number(state.gaugeValue)||0,scale);
   var progress=Math.max(0,Math.min(100,Number(state.progress)||0));
   gauge.setAttribute('data-phase',phase);gauge.setAttribute('data-status',state.status);gauge.setAttribute('aria-busy',state.status==='preparing'||state.status==='running'||state.status==='cancelling'?'true':'false');gauge.style.setProperty('--gauge-progress',String(progress));
-  el('gauge-needle').setAttribute('transform','rotate('+angle+' 230 230)');
+  el('gauge-needle').style.transform='rotate('+angle+'deg)';
   text(el('phase-label'),phase==='ping'?'Ping':phase==='download'?'Download':phase==='upload'?'Upload':phase==='complete'?'Complete':'Ready');
   text(el('gauge-value'),metric(state.gaugeValue));text(el('gauge-unit'),state.gaugeUnit||'Mbps');
   document.querySelectorAll('[data-gauge-scale]').forEach(function(label,index){label.textContent=metric(scale*index/4)});
   text(el('metric-download'),metric(state.download));text(el('metric-upload'),metric(state.upload));text(el('metric-ping'),metric(state.ping));text(el('metric-jitter'),metric(state.jitter));text(el('metric-loss'),metric(state.loss));
   el('download-trace').setAttribute('d',SpeedtestGauge.tracePath(state.traces.download,scale));
   el('upload-trace').setAttribute('d',SpeedtestGauge.tracePath(state.traces.upload,scale));
-  var compact=state.status==='idle'||state.status==='preparing'||state.status==='done'||state.status==='cancelled'||state.status==='error';el('gauge-dial').hidden=compact;el('gauge-readout').hidden=compact;
+  var compact=state.status==='idle'||state.status==='preparing'||state.status==='done'||state.status==='cancelled'||state.status==='error';setHidden(el('gauge-dial'),compact);setHidden(el('gauge-readout'),compact);
   el('primary-metrics').hidden=state.status==='idle'||state.status==='preparing';document.querySelector('.latency-strip').hidden=state.status==='idle'||state.status==='preparing';
   el('go-control').hidden=state.status==='preparing'||state.status==='running'||state.status==='cancelling';el('cancel-test').hidden=state.status!=='running';el('cancel-test').disabled=state.status!=='running';
   if(state.status!=='running')clearNumericAnnouncement();announcePhase(state.phase);if(state.status==='running')announceGauge(phase+' '+metric(state.gaugeValue)+' '+(state.gaugeUnit||'Mbps'));

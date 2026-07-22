@@ -19,6 +19,8 @@ class FakeNode {
   removeChild(node) { this.children.splice(this.children.indexOf(node), 1); }
   get firstChild() { return this.children[0] || null; }
   setAttribute(name, value) { this.attributes[name] = String(value); }
+  removeAttribute(name) { delete this.attributes[name]; }
+  hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name); }
   getAttribute(name) { return this.attributes[name] || null; }
 }
 
@@ -28,6 +30,7 @@ const ids = ['live-gauge', 'gauge-dial', 'gauge-readout', 'gauge-needle', 'gauge
   'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
   'server-detail', 'results', 'view', 'phase-announcer', 'error-message', 'retry-test'];
 const nodes = Object.fromEntries(ids.map(id => [id, new FakeNode()]));
+nodes['gauge-dial'].setAttribute('hidden', '');
 nodes['live-announcer'].setAttribute('data-throttle-ms', '1000');
 const latency = new FakeNode();
 const scaleLabels = Array.from({ length: 5 }, () => new FakeNode());
@@ -69,6 +72,7 @@ Object.assign(app.state, {
 });
 app.render();
 assert.equal(nodes['gauge-dial'].hidden, false, 'running shows the dial');
+assert.equal(nodes['gauge-dial'].hasAttribute('hidden'), false, 'running removes the SVG hidden attribute');
 assert.equal(nodes['gauge-readout'].hidden, false, 'running shows the live readout');
 assert.equal(nodes['go-control'].hidden, true, 'running hides GO');
 assert.equal(nodes['cancel-test'].hidden, false, 'running shows cancel');
@@ -84,7 +88,7 @@ assert.equal(nodes['metric-ping'].textContent, '8.4');
 assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 200));
 assert.equal(nodes['upload-trace'].attributes.d, '');
 assert.deepEqual(scaleLabels.map(node => node.textContent), ['0', '50', '100', '150', '200']);
-assert.equal(nodes['gauge-needle'].attributes.transform, 'rotate(-67.5 230 230)');
+assert.equal(nodes['gauge-needle'].style.transform, 'rotate(-67.5deg)');
 assert.equal(nodes['live-gauge'].style.values['--gauge-progress'], '25');
 
 Object.assign(app.state, { phase: 'upload', progress: 60, gaugeValue: 100, upload: 42.75, traces: { download: [10, 30, 50], upload: [20, 42.75] } });
@@ -94,7 +98,7 @@ assert.equal(nodes['phase-label'].textContent, 'Upload');
 assert.equal(nodes['phase-announcer'].textContent, 'Upload phase');
 assert.equal(nodes['metric-upload'].textContent, '42.75');
 assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 200));
-assert.equal(nodes['gauge-needle'].attributes.transform, 'rotate(0 230 230)');
+assert.equal(nodes['gauge-needle'].style.transform, 'rotate(0deg)');
 
 Object.assign(app.state, { status: 'done', phase: 'complete', progress: 100 });
 app.render();

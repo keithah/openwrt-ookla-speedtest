@@ -203,6 +203,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertIn("rpcd", luci_postinst)
         gl_postinst = (PACKAGE / "gl-app-ookla-speedtest-web/CONTROL/postinst").read_text()
         self.assertIn("nginx", gl_postinst)
+        self.assertIn("nginx restart", gl_postinst)
 
     def test_rpcd_acl_is_limited_to_fixed_methods(self):
         acl = PACKAGE / "luci-app-ookla-speedtest-web/usr/share/rpcd/acl.d/luci-app-ookla-speedtest-web.json"

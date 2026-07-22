@@ -23,6 +23,7 @@ class FakeNode {
   removeChild(node) { this.children.splice(this.children.indexOf(node), 1); }
   get firstChild() { return this.children[0] || null; }
   setAttribute(name, value) { this.attributes[name] = String(value); }
+  removeAttribute(name) { delete this.attributes[name]; }
   getAttribute(name) { return this.attributes[name] || null; }
   showModal() { this.open = true; }
 }
@@ -133,16 +134,16 @@ async function testLiveSamplesReachComplete() {
   assert.equal(h.app.state.phase, 'ping');
   assert.equal(h.nodes['live-gauge'].attributes['data-phase'], 'ping');
   assert.equal(h.nodes['phase-label'].textContent, 'Ping');
-  assert.equal(h.nodes['gauge-needle'].attributes.transform, 'rotate(-110.025 230 230)');
+  assert.equal(h.nodes['gauge-needle'].style.transform, 'rotate(-110.025deg)');
   await h.timers.tick(500);
   assert.equal(h.app.state.phase, 'download');
   assert.deepEqual(Array.from(h.app.state.traces.download), [80, 120]);
   assert.notEqual(h.nodes['download-trace'].attributes.d, '');
-  const downloadNeedle = h.nodes['gauge-needle'].attributes.transform;
+  const downloadNeedle = h.nodes['gauge-needle'].style.transform;
   await h.timers.tick(500);
   assert.equal(h.app.state.phase, 'upload');
   assert.deepEqual(Array.from(h.app.state.traces.upload), [31]);
-  assert.notEqual(h.nodes['gauge-needle'].attributes.transform, downloadNeedle);
+  assert.notEqual(h.nodes['gauge-needle'].style.transform, downloadNeedle);
   await h.timers.tick(500);
   const result = await promise;
   assert.equal(h.app.state.phase, 'complete');
@@ -152,6 +153,24 @@ async function testLiveSamplesReachComplete() {
   assert.equal(result.upload_mbps, 31);
   assert.equal(h.app.state.download, 296.73);
   assert.deepEqual(Array.from(h.app.state.traces.download), [80, 120, 296.73]);
+}
+
+async function testResultEventWaitsForEnrichedTerminalState() {
+  const early = complete('result-race', 250);
+  early.state = 'running';
+  delete early.result.network_context;
+  const terminal = complete('result-race', 250);
+  terminal.result.network_context = { note: 'Tailscale exit node', vpn: true };
+  const responses = [{ ok: true, job_id: 'result-race' }, early, terminal];
+  const h = harness(() => Promise.resolve(responses.shift()));
+  const pending = h.app.internetTest();
+  await flush();
+  assert.equal(h.app.state.phase, 'complete');
+  assert.equal(h.app.state.status, 'running', 'a JSONL result event is not the worker terminal state');
+  await h.timers.tick(500);
+  const result = await pending;
+  assert.equal(result.network_context.note, 'Tailscale exit node');
+  assert.equal(h.calls.filter(call => call.method === 'live_status').length, 2);
 }
 
 async function testCadenceAndRetries() {
@@ -1172,6 +1191,7 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
 
 (async function main() {
   await testLiveSamplesReachComplete();
+  await testResultEventWaitsForEnrichedTerminalState();
   await testCadenceAndRetries();
   await testStaleResponsesAreIgnored();
   await testCancelIsImmediateAndSingleShot();

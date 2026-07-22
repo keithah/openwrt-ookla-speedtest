@@ -6,7 +6,14 @@ LuCI or GL.iNet Applications experience. The interface offers separate
 measurements, plus a **Both** action that runs them together and maps the two
 paths separately in results, history, and analytics.
 
-![Ookla Speedtest Web dashboard](docs/screenshots/dashboard.png)
+These screenshots are from the package running inside the GL.iNet Applications
+view on a real router:
+
+![Ready to run a router-to-internet test](docs/screenshots/dashboard.png)
+
+![Live router-to-internet download gauge](docs/screenshots/live-download.png)
+
+![Separate Device to Router and Router to Internet results](docs/screenshots/final-results.png)
 
 ## What you get
 

@@ -28,6 +28,8 @@ assert.match(js,/function announceGauge\s*\(/); assert.match(js,/setTimeout\s*\(
 assert.match(js,/router.*internet|internet.*router/i); assert.match(css,/@media/); assert.match(css,/#0?4|navy|cyan/i);
 assert.match(css,/--cyan\s*:/); assert.match(css,/--violet\s*:/); assert.match(css,/:focus-visible/); assert.match(css,/@media\s*\(prefers-reduced-motion:\s*reduce\)/); assert.match(css,/@media\s*\(max-width:\s*640px\)/); assert.match(css,/grid-template-columns:\s*1fr/);
 assert.match(css,/\.gauge\[data-status=["']idle["']\]\s+\.gauge-dial/);
+assert.match(css,/\.gauge-needle\s*\{[^}]*transform-box:\s*view-box/);
+assert.doesNotMatch(html,/id=["']gauge-needle["'][^>]*\stransform=/);
 assert.match(css,/\.gauge\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*520px;/s);assert.match(css,/@supports\s*\(aspect-ratio:/);
 assert.match(css,/\.gauge\[data-status=["']done["']\]/);
 assert.match(css,/\.gauge\[data-status="idle"\],[^{]+\{[^}]*width:\s*clamp\(280px,\s*32vw,\s*340px\)/s,'compact shell must remain reference-sized and responsive');

@@ -1,4 +1,4 @@
 #!/bin/sh
 [ -n "$IPKG_INSTROOT" ] && exit 0
-/etc/init.d/nginx reload >/dev/null 2>&1 || true
+/etc/init.d/nginx restart >/dev/null 2>&1 || true
 exit 0

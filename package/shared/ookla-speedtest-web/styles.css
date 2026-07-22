@@ -76,7 +76,7 @@ nav button:hover, .server button:hover { color: var(--cyan); }
 .gauge-progress { stroke: var(--phase-color); stroke-dasharray: var(--gauge-progress, 0) 100; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--phase-color) 38%, transparent)); transition: stroke-dasharray .32s ease, stroke .25s ease; }
 .gauge-ticks path { fill: none; stroke: #425260; stroke-linecap: round; stroke-width: 2; }
 .gauge-ticks text { fill: #71818e; font-size: 11px; text-anchor: middle; }
-.gauge-needle { transform-origin: 230px 230px; transition: transform .32s cubic-bezier(.22, .75, .2, 1); }
+.gauge-needle { transform: rotate(-135deg); transform-box: view-box; transform-origin: 230px 230px; transition: transform .32s cubic-bezier(.22, .75, .2, 1); }
 .gauge-needle line { stroke: var(--phase-color); stroke-linecap: round; stroke-width: 2.5; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--phase-color) 45%, transparent)); }
 .gauge-needle circle { fill: var(--navy-raised); stroke: var(--phase-color); stroke-width: 4; }
 .gauge-readout { position: absolute; top: 48%; left: 50%; display: grid; justify-items: center; width: 190px; transform: translate(-50%, -50%); }
