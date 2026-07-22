@@ -11,7 +11,7 @@ define Package/ookla-speedtest-webd
   SECTION:=net
   CATEGORY:=Network
   TITLE:=Ookla Speedtest web RPC helper
-  DEPENDS:=+ookla-speedtest-cli
+  DEPENDS:=+ookla-speedtest-cli +python3-light
 endef
 
 define Package/luci-app-ookla-speedtest-web

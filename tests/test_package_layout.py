@@ -48,6 +48,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             return
         makefile = makefile_path.read_text()
         self.assertRegex(makefile, r"(?m)^\s*DEPENDS.*ookla-speedtest-cli")
+        self.assertRegex(makefile, r"(?m)^\s*DEPENDS.*\+python3-light(?:\s|$)")
 
     def test_makefile_defines_all_binary_package_outputs_without_downloads(self):
         makefile = (PACKAGE / "Makefile").read_text()
@@ -64,7 +65,7 @@ class PackageLayoutContractTests(unittest.TestCase):
 
     def test_package_metadata_and_modes(self):
         controls = {
-            "ookla-speedtest-webd": ("ookla-speedtest-cli",),
+            "ookla-speedtest-webd": ("ookla-speedtest-cli", "python3-light"),
             "luci-app-ookla-speedtest-web": ("ookla-speedtest-webd", "luci-base", "rpcd"),
             "gl-app-ookla-speedtest-web": ("luci-app-ookla-speedtest-web",),
         }
