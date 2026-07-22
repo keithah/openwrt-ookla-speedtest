@@ -97,7 +97,10 @@ def run(job_id, server_id):
         )
         selector = selectors.DefaultSelector()
         selector.register(process.stdout, selectors.EVENT_READ)
+        os.set_blocking(process.stdout.fileno(), False)
         deadline = time.monotonic() + timeout_seconds()
+        buffered = bytearray()
+        eof = False
         while True:
             if time.monotonic() >= deadline:
                 error_code = "timeout"
@@ -107,42 +110,62 @@ def run(job_id, server_id):
                 if process.poll() is not None:
                     break
                 continue
-            line = process.stdout.readline(service.maxout + 2)
-            if not line:
-                if process.poll() is not None:
-                    break
-                continue
             try:
-                event = service.parse_jsonl_record(line)
-                reduced = service.reduce_event(event)
-            except ValueError as exc:
-                error_code = (
-                    "output_too_large"
-                    if str(exc) == "oversized_jsonl_record"
-                    else "malformed_output"
-                )
-                break
-            except Exception:
-                error_code = "malformed_output"
-                break
-            if reduced is None:
+                read_size = min(65536, service.maxout + 1 - len(buffered))
+                chunk = os.read(process.stdout.fileno(), read_size)
+            except BlockingIOError:
                 continue
-            state.update(reduced)
-            state["state"] = "running"
-            phase = reduced.get("phase")
-            if phase in ("download", "upload"):
-                trace_name = phase + "_trace"
-                trace = state.setdefault(trace_name, [])
-                trace.append(
-                    {
-                        "timestamp": int(time.time() * 1000),
-                        "value": reduced[phase + "_mbps"],
-                    }
-                )
-                del trace[:-120]
-            if phase == "complete":
-                result = reduced["result"]
-            service.writejob(job_id, state)
+            if chunk:
+                buffered.extend(chunk)
+            else:
+                eof = True
+            while True:
+                newline = buffered.find(b"\n")
+                if newline >= 0:
+                    line = bytes(buffered[:newline])
+                    del buffered[: newline + 1]
+                elif eof and buffered:
+                    line = bytes(buffered)
+                    buffered.clear()
+                else:
+                    if len(buffered) > service.maxout:
+                        error_code = "output_too_large"
+                    break
+                try:
+                    event = service.parse_jsonl_record(line)
+                    reduced = service.reduce_event(event)
+                except ValueError as exc:
+                    error_code = (
+                        "output_too_large"
+                        if str(exc) == "oversized_jsonl_record"
+                        else "malformed_output"
+                    )
+                    break
+                except Exception:
+                    error_code = "malformed_output"
+                    break
+                if reduced is None:
+                    continue
+                state.update(reduced)
+                state["state"] = "running"
+                phase = reduced.get("phase")
+                if phase in ("download", "upload"):
+                    trace_name = phase + "_trace"
+                    trace = state.setdefault(trace_name, [])
+                    trace.append(
+                        {
+                            "timestamp": int(time.time() * 1000),
+                            "value": reduced[phase + "_mbps"],
+                        }
+                    )
+                    del trace[:-120]
+                if phase == "complete":
+                    result = reduced["result"]
+                service.writejob(job_id, state)
+            if error_code:
+                break
+            if eof and process.poll() is not None:
+                break
         if error_code:
             process.terminate()
         try:

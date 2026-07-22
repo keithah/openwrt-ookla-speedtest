@@ -4,8 +4,10 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -182,6 +184,18 @@ class LiveJobTests(unittest.TestCase):
             """#!/usr/bin/env python3
 import json, os, sys, time
 mode = open(os.environ['OOKLA_FAKE_MODE_FILE']).read().strip()
+if mode == 'partial':
+ os.write(1, b'{"type":"ping"')
+ time.sleep(3)
+ sys.exit(0)
+if mode == 'malformed':
+ print('{bad json', flush=True)
+ sys.exit(0)
+if mode == 'oversized':
+ os.write(1, b'x' * (1024 * 1024 + 1))
+ sys.exit(0)
+if mode == 'nonzero':
+ sys.exit(3)
 delay = 0.35 if mode == 'slow' else 0.05
 events = [
  {'type':'testStart','isp':'ISP','interface':{'name':'eth0'},'server':{'id':42,'name':'Test'}},
@@ -190,6 +204,9 @@ events = [
  {'type':'upload','upload':{'bandwidth':2500000,'progress':0.5,'latency':{'iqm':33}}},
  {'type':'result','ping':{'latency':12.5},'download':{'bandwidth':12500000},'upload':{'bandwidth':2500000},'packetLoss':0,'isp':'ISP','interface':{'name':'eth0'},'server':{'id':42,'name':'Test'},'result':{'id':'result-id','url':'https://example.test/result'}},
 ]
+if mode == 'trace':
+ events = events[:2] + [dict(events[2], download=dict(events[2]['download'], progress=i/121)) for i in range(121)] + events[3:]
+ delay = 0
 for event in events:
  print(json.dumps(event), flush=True)
  time.sleep(delay)
@@ -203,6 +220,7 @@ for event in events:
             OOKLA_SPEEDTEST_BIN=str(self.speedtest),
             OOKLA_FAKE_MODE_FILE=str(self.mode_file),
             OOKLA_LIVE_JOB_TTL="1",
+            OOKLA_LIVE_TIMEOUT="1",
         )
         self.jobs = []
 
@@ -240,16 +258,30 @@ for event in events:
             time.sleep(0.02)
         self.fail("job did not reach expected state; last response: %r" % (last,))
 
+    def poll_until_terminal(self, job_id, timeout=4):
+        rows = []
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            row = self.rpc("live_status", job_id=job_id)
+            rows.append(row)
+            if row.get("state") in ("complete", "cancelled", "error"):
+                return rows
+            time.sleep(0.01)
+        self.fail("job did not become terminal; last response: %r" % (rows[-1],))
+
     def test_start_streams_download_then_completes(self):
         started = self.start()
 
         self.assertTrue(started["ok"])
         self.assertRegex(started["job_id"], r"^[0-9a-f]{32}$")
         job_id = started["job_id"]
-        download = self.wait_for(job_id, lambda row: row.get("phase") == "download")
+        states = self.poll_until_terminal(job_id)
+        phases = [row.get("phase") for row in states]
+        for phase in ("ping", "download", "upload", "complete"):
+            self.assertIn(phase, phases)
+        download = next(row for row in states if row.get("phase") == "download")
         self.assertEqual(download["download_mbps"], 100.0)
-
-        complete = self.wait_for(job_id, lambda row: row.get("state") == "complete")
+        complete = states[-1]
         self.assertEqual(complete["result"]["server"]["id"], 42)
 
     def test_cancel_records_history_and_allows_a_new_job(self):
@@ -311,6 +343,110 @@ for event in events:
         )
 
         self.assertEqual(failed["error"]["code"], "speedtest_failed")
+
+    def test_partial_jsonl_line_still_times_out(self):
+        self.mode_file.write_text("partial\n")
+        started = self.start()
+
+        failed = self.wait_for(
+            started["job_id"], lambda row: row.get("state") == "error", timeout=2
+        )
+
+        self.assertEqual(failed["error"]["code"], "timeout")
+
+    def test_worker_reports_stable_output_errors(self):
+        for mode, code in (
+            ("malformed", "malformed_output"),
+            ("oversized", "output_too_large"),
+            ("nonzero", "speedtest_failed"),
+        ):
+            with self.subTest(mode=mode):
+                self.mode_file.write_text(mode + "\n")
+                started = self.start()
+                failed = self.wait_for(
+                    started["job_id"],
+                    lambda row: row.get("state") == "error",
+                    timeout=2,
+                )
+                self.assertEqual(failed["error"]["code"], code)
+
+    def test_transfer_trace_is_capped_at_120_points(self):
+        self.mode_file.write_text("trace\n")
+        self.environment["OOKLA_LIVE_TIMEOUT"] = "10"
+        started = self.start()
+
+        complete = self.wait_for(
+            started["job_id"], lambda row: row.get("state") == "complete", timeout=8
+        )
+
+        self.assertEqual(len(complete["download_trace"]), 120)
+
+    def test_simultaneous_starts_reserve_only_one_job(self):
+        barrier = threading.Barrier(2)
+        flock_released = threading.Event()
+        flock_calls = 0
+        observation_calls = 0
+        call_lock = threading.Lock()
+        environment = {
+            "OOKLA_WEBD_RUN_DIR": str(self.run_dir),
+            "OOKLA_WEBD_HISTORY": str(self.etc_dir / "history.jsonl"),
+            "OOKLA_SPEEDTEST_BIN": str(self.speedtest),
+            "OOKLA_FAKE_MODE_FILE": str(self.mode_file),
+        }
+        with mock.patch.dict(os.environ, environment), mock.patch(
+            "sys.argv", [str(SERVICE)]
+        ):
+            loader = importlib.machinery.SourceFileLoader("race_service", str(SERVICE))
+            spec = importlib.util.spec_from_loader(loader.name, loader)
+            module = importlib.util.module_from_spec(spec)
+            loader.exec_module(module)
+            real_has_starting = module.has_starting
+            real_flock = module.fcntl.flock
+
+            def synchronized_observation():
+                nonlocal observation_calls
+                with call_lock:
+                    observation_calls += 1
+                    call_number = observation_calls
+                if call_number <= 2:
+                    barrier.wait(timeout=2)
+                    return False
+                return real_has_starting()
+
+            def scheduled_flock(handle, operation):
+                nonlocal flock_calls
+                if operation == module.fcntl.LOCK_UN:
+                    flock_released.set()
+                    return real_flock(handle, operation)
+                with call_lock:
+                    flock_calls += 1
+                    call_number = flock_calls
+                if call_number == 2:
+                    flock_released.wait(timeout=2)
+                return real_flock(handle, operation)
+
+            fake_child = mock.Mock(pid=12345)
+            with mock.patch.object(
+                module, "has_starting", side_effect=synchronized_observation
+            ), mock.patch.object(
+                module.fcntl, "flock", side_effect=scheduled_flock
+            ), mock.patch.object(module.subprocess, "Popen", return_value=fake_child):
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    responses = list(
+                        executor.map(
+                            module.main,
+                            [
+                                {"method": "start_live", "server_id": "42"},
+                                {"method": "start_live", "server_id": "42"},
+                            ],
+                        )
+                    )
+
+        self.assertEqual(sum(row.get("ok") is True for row in responses), 1)
+        self.assertEqual(
+            [row.get("error", {}).get("code") for row in responses].count("busy"),
+            1,
+        )
 
 
 if __name__ == "__main__":

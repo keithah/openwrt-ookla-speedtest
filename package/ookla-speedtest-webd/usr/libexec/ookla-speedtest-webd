@@ -23,14 +23,21 @@ def lock(ignore_starting=False):
  p=os.path.join(run,'start.lock')
  try: f=open(p,'w')
  except OSError: return ('storage_error',None)
- try: fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB); return f,None
+ try:
+  fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  if not ignore_starting and has_starting():
+   fcntl.flock(f,fcntl.LOCK_UN); f.close(); return None,None
+  return f,None
  except BlockingIOError:
   f.close(); return None,None
  except OSError as e:
   if e.errno not in (errno.ENOSYS,errno.ENOTSUP,errno.EOPNOTSUPP):
    f.close(); return 'storage_error',None
   f.close(); d=p+'.d'
-  try: os.mkdir(d); return None,d
+  try:
+   os.mkdir(d)
+   if not ignore_starting and has_starting(): os.rmdir(d); return None,None
+   return None,d
   except Exception: return None,None
 def unlock(x):
  f,d=x
