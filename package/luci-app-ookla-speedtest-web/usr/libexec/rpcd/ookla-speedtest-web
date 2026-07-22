@@ -2,7 +2,9 @@
 import json, os, sys, subprocess
 
 methods={
- 'status':{}, 'servers':{}, 'start':{'server_id':''}, 'history':{},
+ 'status':{}, 'servers':{}, 'start':{'server_id':''},
+ 'start_live':{'server_id':''}, 'live_status':{'job_id':''},
+ 'cancel_live':{'job_id':''}, 'history':{},
  'delete_history':{'id':''}, 'clear_history':{}, 'settings':{},
  'accept_terms':{}, 'local_download':{'bytes':0}, 'local_upload':{'data':''},
  'record_local':{'download_mbps':'','upload_mbps':'','ping_ms':''}

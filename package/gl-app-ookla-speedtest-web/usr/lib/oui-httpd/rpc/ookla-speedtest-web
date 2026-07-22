@@ -3,13 +3,13 @@ local cjson = require "cjson"
 local M = {}
 local helper = "/usr/libexec/ookla-speedtest-webd"
 
-local function invoke(method, params)
+local function invoke(method, params, timeout)
     params = params or {}
     params.method = method
 
     local proc, spawn_err = ngx.pipe.spawn(
         {helper, cjson.encode(params)},
-        {stdout_read_timeout = 130000}
+        {stdout_read_timeout = timeout or 30000}
     )
     if not proc then
         return {ok = false, error = {code = "bridge_error", message = spawn_err}}
@@ -30,7 +30,10 @@ end
 
 function M.status(params) return invoke("status", params) end
 function M.servers(params) return invoke("servers", params) end
-function M.start(params) return invoke("start", params) end
+function M.start(params) return invoke("start", params, 130000) end
+function M.start_live(params) return invoke("start_live", params) end
+function M.live_status(params) return invoke("live_status", params) end
+function M.cancel_live(params) return invoke("cancel_live", params) end
 function M.history(params) return invoke("history", params) end
 function M.delete_history(params) return invoke("delete_history", params) end
 function M.clear_history(params) return invoke("clear_history", params) end
