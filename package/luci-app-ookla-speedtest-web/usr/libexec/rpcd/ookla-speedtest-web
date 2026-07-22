@@ -6,8 +6,9 @@ methods={
  'start_live':{'server_id':''}, 'live_status':{'job_id':''},
  'cancel_live':{'job_id':''}, 'history':{},
  'delete_history':{'id':''}, 'clear_history':{}, 'settings':{},
- 'accept_terms':{}, 'local_download':{'bytes':0}, 'local_upload':{'data':''},
- 'record_local':{'download_mbps':'','upload_mbps':'','ping_ms':''}
+ 'accept_terms':{}, 'begin_local':{}, 'cancel_local':{'run_id':''},
+ 'local_download':{'bytes':0}, 'local_upload':{'data':''},
+ 'record_local':{'run_id':'','download_mbps':'','upload_mbps':'','ping_ms':''}
 }
 if len(sys.argv)>1 and sys.argv[1]=='list':
  print(json.dumps(methods,separators=(',',':'))); raise SystemExit

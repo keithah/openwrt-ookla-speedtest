@@ -259,6 +259,7 @@ for event in events:
             self.jobs.append(response["job_id"])
         return response
 
+
     def wait_for(self, job_id, predicate, timeout=4):
         deadline = time.monotonic() + timeout
         last = None
@@ -712,6 +713,133 @@ for event in events:
         self.assertEqual(service.readjob(job_id)["state"], "cancelled")
         self.assertEqual(service.readhist()[-1]["outcome"], "cancelled")
         self.assertFalse(Path(service.startingfile(job_id)).exists())
+
+
+class LocalRunLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.runtime = tempfile.TemporaryDirectory()
+        self.root = Path(self.runtime.name)
+        self.run_dir = self.root / "run"
+        self.etc_dir = self.root / "etc"
+        self.run_dir.mkdir(parents=True)
+        self.etc_dir.mkdir(parents=True)
+        self.history = self.etc_dir / "history.jsonl"
+        self.environment = dict(
+            os.environ,
+            OOKLA_WEBD_RUN_DIR=str(self.run_dir),
+            OOKLA_WEBD_HISTORY=str(self.history),
+            OOKLA_HISTORY_RETENTION="2",
+            OOKLA_LOCAL_RUN_TTL="600",
+        )
+
+    def tearDown(self):
+        self.runtime.cleanup()
+
+    def rpc(self, method, **params):
+        process = subprocess.run(
+            [str(SERVICE), json.dumps(dict(params, method=method))],
+            env=self.environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            check=True,
+        )
+        return json.loads(process.stdout)
+
+    def history_rows(self):
+        if not self.history.exists():
+            return []
+        return [json.loads(line) for line in self.history.read_text().splitlines()]
+
+    def prefill_full_history(self):
+        rows = [
+            {"id": "older-1", "kind": "device-router", "outcome": "success"},
+            {"id": "older-2", "kind": "router-internet", "outcome": "success"},
+        ]
+        self.history.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        return rows
+
+    def local_values(self, run_id):
+        return {
+            "run_id": run_id,
+            "download_mbps": 125.5,
+            "upload_mbps": 80.2,
+            "ping_ms": 3.1,
+        }
+
+    def test_cancel_before_record_preserves_full_retention_history(self):
+        original = self.prefill_full_history()
+        begun = self.rpc("begin_local")
+        self.assertRegex(begun["run_id"], r"^[0-9a-f]{32}$")
+
+        cancelled = self.rpc("cancel_local", run_id=begun["run_id"])
+        recorded = self.rpc("record_local", **self.local_values(begun["run_id"]))
+
+        self.assertEqual(cancelled["state"], "cancelled")
+        self.assertEqual(recorded["error"]["code"], "local_cancelled")
+        self.assertEqual(self.history_rows(), original)
+
+    def test_record_before_cancel_commits_once_and_cancel_is_too_late(self):
+        self.prefill_full_history()
+        run_id = self.rpc("begin_local")["run_id"]
+
+        first = self.rpc("record_local", **self.local_values(run_id))
+        replay = self.rpc("record_local", **self.local_values(run_id))
+        cancelled = self.rpc("cancel_local", run_id=run_id)
+
+        self.assertEqual(first["state"], "committed")
+        self.assertEqual(replay["state"], "committed")
+        self.assertEqual(first["item"]["id"], run_id)
+        self.assertEqual(cancelled["error"]["code"], "too_late")
+        self.assertEqual(cancelled["state"], "committed")
+        rows = self.history_rows()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([row["id"] for row in rows].count(run_id), 1)
+
+    def test_concurrent_cancel_and_record_have_one_atomic_winner(self):
+        original = self.prefill_full_history()
+        run_id = self.rpc("begin_local")["run_id"]
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            cancel_future = executor.submit(self.rpc, "cancel_local", run_id=run_id)
+            record_future = executor.submit(
+                self.rpc, "record_local", **self.local_values(run_id)
+            )
+            cancelled = cancel_future.result(timeout=5)
+            recorded = record_future.result(timeout=5)
+
+        rows = self.history_rows()
+        if cancelled.get("state") == "cancelled":
+            self.assertEqual(recorded["error"]["code"], "local_cancelled")
+            self.assertEqual(rows, original)
+        else:
+            self.assertEqual(cancelled["error"]["code"], "too_late")
+            self.assertEqual(recorded["state"], "committed")
+            self.assertEqual([row["id"] for row in rows], ["older-2", run_id])
+        self.assertLessEqual([row["id"] for row in rows].count(run_id), 1)
+
+    def test_expired_local_markers_are_cleaned_on_begin(self):
+        run_id = self.rpc("begin_local")["run_id"]
+        marker = self.run_dir / "local-jobs" / f"{run_id}.json"
+        row = json.loads(marker.read_text())
+        row["updated"] = 0
+        marker.write_text(json.dumps(row))
+        corrupt = self.run_dir / "local-jobs" / ("b" * 32 + ".json")
+        corrupt.write_text("not json")
+        os.utime(corrupt, (0, 0))
+        self.environment["OOKLA_LOCAL_RUN_TTL"] = "1"
+
+        self.rpc("begin_local")
+
+        self.assertFalse(marker.exists())
+        self.assertFalse(corrupt.exists())
+
+    def test_local_run_ids_are_path_safe(self):
+        for method in ("cancel_local", "record_local"):
+            with self.subTest(method=method):
+                response = self.rpc(method, **self.local_values("../bad"))
+                self.assertEqual(response["error"]["code"], "invalid_local_run_id")
+        self.assertFalse((self.root / "bad.json").exists())
 
 
 if __name__ == "__main__":

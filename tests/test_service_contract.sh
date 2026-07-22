@@ -11,6 +11,8 @@ export OOKLA_WEBD_RUN_DIR="$ROOT/run" OOKLA_WEBD_HISTORY="$ROOT/etc/history.json
 SVC=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd
 RPC=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/luci-app-ookla-speedtest-web/usr/libexec/rpcd/ookla-speedtest-web
 "$RPC" list | grep -q '"local_download"'
+"$RPC" list | grep -q '"begin_local"'
+"$RPC" list | grep -q '"cancel_local"'
 printf '%s\n' '{"bytes":1024}' | OOKLA_WEBD_HELPER="$SVC" "$RPC" call local_download | grep -q '"bytes":1024'
 out=$(printf '%s\n' '{"method":"status"}' | "$SVC"); echo "$out" | grep -q '"state"'
 out=$("$SVC" '{"method":"local_download","bytes":1024}'); echo "$out" | grep -q '"bytes":1024'; echo "$out" | grep -q '"data"'
@@ -38,7 +40,9 @@ out=$(printf '%s\n' '{"method":"history"}' | "$SVC"); echo "$out" | grep -q '"it
 out=$(printf '%s\n' '{"method":"local_download","bytes":1024}' | "$SVC"); echo "$out" | grep -q '"bytes":1024'; echo "$out" | grep -q '"data"'
 out=$(printf '%s\n' '{"method":"local_upload","data":"01234567"}' | "$SVC"); echo "$out" | grep -q '"bytes":8'
 printf '%s\n' '{"method":"local_download","bytes":9999999}' | "$SVC" | grep -q 'invalid_transfer_size'
-out=$(printf '%s\n' '{"method":"record_local","download_mbps":125.5,"upload_mbps":80.2,"ping_ms":3.1}' | "$SVC"); echo "$out" | grep -q '"ok":true'
+out=$(printf '%s\n' '{"method":"begin_local"}' | "$SVC"); echo "$out" | grep -Eq '"run_id":"[0-9a-f]{32}"'
+local_run_id=$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])')
+out=$(printf '{"method":"record_local","run_id":"%s","download_mbps":125.5,"upload_mbps":80.2,"ping_ms":3.1}\n' "$local_run_id" | "$SVC"); echo "$out" | grep -q '"state":"committed"'
 printf '%s\n' '{"method":"history"}' | "$SVC" | grep -q '"kind":"device-router"'
 out=$(printf '%s\n' '{"method":"start","server_id":"x"}' | "$SVC" || true); echo "$out" | grep -q 'invalid_server_id'
 printf '%s\n' '{"method":"clear_history"}' | "$SVC" | grep -q '"ok":true'

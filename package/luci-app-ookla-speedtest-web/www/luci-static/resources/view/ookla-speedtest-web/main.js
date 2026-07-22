@@ -1,7 +1,7 @@
 'use strict';
 'require view';
 'require rpc';
-var specs={status:[],servers:[],start:['server_id'],start_live:['server_id'],live_status:['job_id'],cancel_live:['job_id'],history:[],delete_history:['id'],clear_history:[],settings:[],accept_terms:[],local_download:['bytes'],local_upload:['data'],record_local:['download_mbps','upload_mbps','ping_ms']};
+var specs={status:[],servers:[],start:['server_id'],start_live:['server_id'],live_status:['job_id'],cancel_live:['job_id'],history:[],delete_history:['id'],clear_history:[],settings:[],accept_terms:[],begin_local:[],cancel_local:['run_id'],local_download:['bytes'],local_upload:['data'],record_local:['run_id','download_mbps','upload_mbps','ping_ms']};
 var call={};
 Object.keys(specs).forEach(function(method){call[method]=rpc.declare({object:'ookla-speedtest-web',method:method,params:specs[method]})});
 call.runTest=function(params){return call.start(params&&params.server_id)};

@@ -3,6 +3,7 @@ import os,sys,json,time,subprocess,fcntl,re,tempfile,errno,signal
 run=os.environ.get('OOKLA_WEBD_RUN_DIR','/var/run/ookla-speedtest-webd'); hist=os.environ.get('OOKLA_WEBD_HISTORY','/etc/ookla-speedtest-webd/history.jsonl'); binary=os.environ.get('OOKLA_SPEEDTEST_BIN','/usr/bin/speedtest'); maxout=1024*1024
 os.makedirs(run,exist_ok=True); os.makedirs(os.path.dirname(hist),exist_ok=True)
 jobsdir=os.path.join(run,'jobs'); os.makedirs(jobsdir,exist_ok=True)
+localjobsdir=os.path.join(run,'local-jobs'); os.makedirs(localjobsdir,exist_ok=True)
 worker=os.environ.get('OOKLA_WEBD_WORKER',os.path.join(os.path.dirname(os.path.realpath(__file__)),'ookla-speedtest-webd-worker'))
 def retention():
  try:
@@ -110,6 +111,7 @@ def reduce_event(event):
  return None
 def valid_job_id(value): return isinstance(value,str) and re.fullmatch(r'[0-9a-f]{32}',value) is not None
 def jobfile(job_id): return os.path.join(jobsdir,job_id+'.json')
+def localjobfile(run_id): return os.path.join(localjobsdir,run_id+'.json')
 def readjob(job_id):
  try:
   with open(jobfile(job_id)) as f: return json.load(f)
@@ -125,6 +127,37 @@ def live_stale_grace():
   value=int(os.environ.get('OOKLA_LIVE_STALE_GRACE','10'))
   return value if value>=0 else 10
  except Exception: return 10
+def local_run_ttl():
+ try:
+  value=int(os.environ.get('OOKLA_LOCAL_RUN_TTL','600'))
+  return value if value>=0 else 600
+ except Exception: return 600
+def acquire_local_lock():
+ deadline=time.monotonic()+2
+ while time.monotonic()<deadline:
+  held=lock(ignore_starting=True)
+  if held!=(None,None): return held
+  time.sleep(.005)
+ return None,None
+def readlocaljob(run_id):
+ try:
+  with open(localjobfile(run_id)) as f: return json.load(f)
+ except Exception: return None
+def writelocaljob(run_id,state): atomic_write(localjobfile(run_id),json.dumps(state,separators=(',',':')))
+def cleanup_local_runs():
+ now=time.time(); ttl=local_run_ttl()
+ try: names=os.listdir(localjobsdir)
+ except OSError: names=[]
+ for name in names:
+  if not re.fullmatch(r'[0-9a-f]{32}\.json',name): continue
+  path=os.path.join(localjobsdir,name)
+  try:
+   try:
+    with open(path) as f: row=json.load(f)
+    updated=float(row.get('updated',os.path.getmtime(path)))
+   except Exception: updated=os.path.getmtime(path)
+   if now-updated>ttl: os.unlink(path)
+  except Exception: pass
 def stop_spawned_worker(child,job_id):
  deadline=time.monotonic()+.5; group_verified=False
  while child.poll() is None and time.monotonic()<deadline:
@@ -294,6 +327,32 @@ def main(req):
  if m=='accept_terms':
   try: atomic_write(termsfile,'accepted\n'); return {'ok':True}
   except Exception: return {'ok':False,'error':{'code':'storage_error'}}
+ if m=='begin_local':
+  lk=acquire_local_lock()
+  if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
+  if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
+  try:
+   cleanup_local_runs(); run_id=new_id(); now=int(time.time())
+   writelocaljob(run_id,{'run_id':run_id,'state':'active','started':now,'updated':now})
+   return {'ok':True,'run_id':run_id,'state':'active'}
+  except Exception: return {'ok':False,'error':{'code':'storage_error'}}
+  finally: unlock(lk)
+ if m=='cancel_local':
+  run_id=req.get('run_id')
+  if not valid_job_id(run_id): return {'ok':False,'error':{'code':'invalid_local_run_id'}}
+  lk=acquire_local_lock()
+  if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
+  if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
+  try:
+   cleanup_local_runs(); row=readlocaljob(run_id)
+   if row is None: return {'ok':False,'error':{'code':'local_run_not_found'}}
+   if row.get('state')=='committed': return {'ok':False,'state':'committed','error':{'code':'too_late'}}
+   if row.get('state')=='cancelled': return {'ok':True,'run_id':run_id,'state':'cancelled'}
+   if row.get('state')!='active': return {'ok':False,'error':{'code':'invalid_local_state'}}
+   row.update({'state':'cancelled','updated':int(time.time())}); writelocaljob(run_id,row)
+   return {'ok':True,'run_id':run_id,'state':'cancelled'}
+  except Exception: return {'ok':False,'error':{'code':'storage_error'}}
+  finally: unlock(lk)
  if m=='local_download':
   try: size=int(req.get('bytes',131072))
   except Exception: size=0
@@ -307,10 +366,31 @@ def main(req):
   try:
    values={k:round(float(req[k]),2) for k in ('download_mbps','upload_mbps','ping_ms')}
    if any(v<0 or v>100000 for v in values.values()): raise ValueError
-   rec=dict({'id':new_id(),'timestamp':int(time.time()),'kind':'device-router','outcome':'success'},**values)
-   n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items)
-   return {'ok':True,'item':rec}
   except Exception: return {'ok':False,'error':{'code':'invalid_local_result'}}
+  run_id=req.get('run_id')
+  if run_id is None:
+   try:
+    rec=dict({'id':new_id(),'timestamp':int(time.time()),'kind':'device-router','outcome':'success'},**values)
+    n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items)
+    return {'ok':True,'item':rec}
+   except Exception: return {'ok':False,'error':{'code':'invalid_local_result'}}
+  if not valid_job_id(run_id): return {'ok':False,'error':{'code':'invalid_local_run_id'}}
+  lk=acquire_local_lock()
+  if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
+  if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
+  try:
+   cleanup_local_runs(); row=readlocaljob(run_id)
+   if row is None: return {'ok':False,'error':{'code':'local_run_not_found'}}
+   if row.get('state')=='cancelled': return {'ok':False,'state':'cancelled','error':{'code':'local_cancelled'}}
+   if row.get('state')=='committed': return {'ok':True,'run_id':run_id,'state':'committed','item':row.get('item')}
+   if row.get('state')!='active': return {'ok':False,'error':{'code':'invalid_local_state'}}
+   rec=dict({'id':run_id,'timestamp':int(time.time()),'kind':'device-router','outcome':'success'},**values)
+   n=retention(); items=[item for item in readhist() if item.get('id')!=run_id]+[rec]
+   writehist(items if n==0 else items[-n:])
+   row.update({'state':'committed','updated':int(time.time()),'item':rec}); writelocaljob(run_id,row)
+   return {'ok':True,'run_id':run_id,'state':'committed','item':rec}
+  except Exception: return {'ok':False,'error':{'code':'storage_error'}}
+  finally: unlock(lk)
  if m=='servers':
   global _servers_cache,_servers_cache_at
   try:

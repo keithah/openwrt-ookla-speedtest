@@ -9,7 +9,7 @@
     },
     "write": {
       "ubus": {
-        "ookla-speedtest-web": ["start", "start_live", "live_status", "cancel_live", "delete_history", "clear_history", "settings", "accept_terms", "local_download", "local_upload", "record_local"]
+        "ookla-speedtest-web": ["start", "start_live", "live_status", "cancel_live", "delete_history", "clear_history", "settings", "accept_terms", "begin_local", "cancel_local", "local_download", "local_upload", "record_local"]
       }
     }
   }
