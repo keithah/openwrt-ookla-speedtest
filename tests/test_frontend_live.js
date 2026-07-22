@@ -53,7 +53,7 @@ async function flush() {
   for (let i = 0; i < 8; i++) await Promise.resolve();
 }
 
-function harness(handler) {
+function harness(handler, options) {
   const ids = ['live-gauge', 'gauge-dial', 'gauge-readout', 'gauge-needle', 'gauge-value', 'gauge-unit',
     'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
     'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
@@ -75,8 +75,8 @@ function harness(handler) {
   };
   const timers = new FakeTimers();
   const calls = [];
-  const adapter = { call(method, params) { calls.push({ method, params, at: timers.now }); return handler(method, params, calls); } };
-  const window = { SpeedtestWebAdapter: adapter };
+  const adapter = { call(method, params) { calls.push({ method, params, at: timers.now }); return handler(method, params, calls, timers); } };
+  const window = { SpeedtestWebAdapter: adapter, SpeedtestWebLocalConfig: options && options.local };
   const FakeDate = { now: () => timers.now };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), {
     window, document, SpeedtestGauge, Promise, performance: { now: () => timers.now }, Date: FakeDate,
@@ -264,20 +264,116 @@ async function testTermsAcceptanceResumesLiveRun() {
 }
 
 async function testDeviceRouterKeepsLocalBridge() {
-  const h = harness((method, params) => {
+  const pingDelays = [7, 3, 5];
+  const h = harness((method, params, calls, timers) => {
+    if (method === 'local_download' && params.bytes === 1024) return new Promise(resolve => {
+      const delay = pingDelays.shift();
+      timers.setTimeout(() => resolve({ ok: true, bytes: params.bytes }), delay);
+    });
     if (method === 'local_download') return Promise.resolve({ ok: true, bytes: params.bytes });
     if (method === 'local_upload') return Promise.resolve({ ok: true, bytes: params.data.length });
     if (method === 'record_local') return Promise.resolve({ ok: true });
     if (method === 'history') return Promise.resolve({ ok: true, items: [] });
     throw new Error('unexpected ' + method);
-  });
-  await h.app.runMode('device-router');
-  assert.equal(h.calls.filter(call => call.method === 'local_download').length, 17);
+  }, { local: { measurementMs: 3000, maxBatches: 2 } });
+  const run = h.app.runMode('device-router');
+  await h.timers.tick(7);
+  await h.timers.tick(3);
+  await h.timers.tick(5);
+  await run;
+  const latency = h.calls.slice(0, 3);
+  assert.deepEqual(latency.map(call => [call.method, call.params.bytes]), [
+    ['local_download', 1024], ['local_download', 1024], ['local_download', 1024]
+  ]);
+  assert.equal(h.calls.filter(call => call.method === 'local_download').length, 19);
   assert.equal(h.calls.filter(call => call.method === 'local_upload').length, 16);
   assert.equal(h.calls.filter(call => call.method === 'record_local').length, 1);
+  assert.equal(h.app.state.results.local.ping_ms, 5, 'three latency probes use their median');
+  assert.equal(h.app.state.traces.download.length, 2, 'each completed download batch emits a gauge sample');
+  assert.equal(h.app.state.traces.upload.length, 2, 'each completed upload batch emits a gauge sample');
+  assert.ok(h.calls.filter(call => call.method === 'local_download' && call.params.bytes !== 1024)
+    .every(call => call.params.bytes === 32768));
+  assert.ok(h.calls.filter(call => call.method === 'local_upload')
+    .every(call => call.params.data.length === 32768));
   assert.equal(h.calls.some(call => ['settings', 'start_live', 'live_status', 'runTest'].includes(call.method)), false);
   assert.equal(h.app.state.status, 'done');
   assert.ok(h.app.state.results.local);
+}
+
+async function testCancelDuringLocalStopsAfterInflightBatch() {
+  const batch = deferred();
+  const h = harness((method, params) => {
+    if (method === 'local_download' && params.bytes === 1024) return Promise.resolve({ ok: true, bytes: params.bytes });
+    if (method === 'local_download') return batch.promise;
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    throw new Error('unexpected ' + method);
+  }, { local: { measurementMs: 3000, maxBatches: 3 } });
+  const run = h.app.runMode('device-router');
+  await flush();
+  assert.equal(h.calls.filter(call => call.method === 'local_download' && call.params.bytes === 32768).length, 8);
+  await h.app.cancelTest();
+  assert.equal(h.app.state.status, 'cancelled');
+  batch.resolve({ ok: true, bytes: 32768 });
+  await run;
+  assert.equal(h.calls.filter(call => call.method === 'local_download' && call.params.bytes === 32768).length, 8);
+  assert.equal(h.calls.some(call => call.method === 'local_upload'), false);
+  assert.equal(h.calls.some(call => call.method === 'record_local'), false);
+  assert.equal(h.app.state.status, 'cancelled');
+  assert.equal(h.app.state.results.local, null);
+}
+
+async function testBothRunsLocalThenInternetAndKeepsSeparateResults() {
+  const h = harness((method, params, calls) => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'local_download') return Promise.resolve({ ok: true, bytes: params.bytes });
+    if (method === 'local_upload') return Promise.resolve({ ok: true, bytes: params.data.length });
+    if (method === 'record_local') return Promise.resolve({ ok: true });
+    if (method === 'start_live') {
+      assert.equal(calls.filter(call => call.method === 'record_local').length, 1, 'internet starts only after local recording completes');
+      return Promise.resolve({ ok: true, job_id: 'both-job' });
+    }
+    if (method === 'live_status') return Promise.resolve(complete('both-job', 180));
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    throw new Error('unexpected ' + method);
+  }, { local: { measurementMs: 3000, maxBatches: 2 } });
+  await h.app.runMode('both');
+  const recordIndex = h.calls.findIndex(call => call.method === 'record_local');
+  const startIndex = h.calls.findIndex(call => call.method === 'start_live');
+  assert.ok(recordIndex >= 0 && startIndex > recordIndex);
+  assert.equal(h.app.state.results.local.kind, 'device-router');
+  assert.equal(h.app.state.results.internet.kind, 'router-internet');
+  assert.equal(h.app.state.results.internet.download_mbps, 180);
+  assert.deepEqual(Array.from(h.app.state.traces.download), [180], 'internet path starts with fresh traces');
+}
+
+async function testBothFailureKeepsCompletedLocalAndIdentifiesInternet() {
+  const h = harness((method, params) => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'local_download') return Promise.resolve({ ok: true, bytes: params.bytes });
+    if (method === 'local_upload') return Promise.resolve({ ok: true, bytes: params.data.length });
+    if (method === 'record_local') return Promise.resolve({ ok: true });
+    if (method === 'start_live') return Promise.reject(new Error('internet unavailable'));
+    throw new Error('unexpected ' + method);
+  }, { local: { measurementMs: 3000, maxBatches: 1 } });
+  await h.app.runMode('both');
+  assert.equal(h.app.state.status, 'error');
+  assert.equal(h.app.state.errorPath, 'internet');
+  assert.equal(h.app.state.results.local.kind, 'device-router');
+  assert.equal(h.app.state.results.internet, null);
+}
+
+async function testBothLocalFailureNeverStartsInternet() {
+  const h = harness((method, params) => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'local_download' && params.bytes === 1024) return Promise.resolve({ ok: true, bytes: params.bytes });
+    if (method === 'local_download') return Promise.reject(new Error('local unavailable'));
+    throw new Error('unexpected ' + method);
+  }, { local: { measurementMs: 3000, maxBatches: 1 } });
+  await h.app.runMode('both');
+  assert.equal(h.app.state.status, 'error');
+  assert.equal(h.app.state.errorPath, 'local');
+  assert.equal(h.calls.some(call => call.method === 'start_live'), false);
+  assert.equal(h.calls.some(call => call.method === 'record_local'), false);
 }
 
 async function testRunModeHandlesBackendTerminalStates() {
@@ -522,6 +618,10 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testRunModeUsesTermsServerLiveAndHistory();
   await testTermsAcceptanceResumesLiveRun();
   await testDeviceRouterKeepsLocalBridge();
+  await testCancelDuringLocalStopsAfterInflightBatch();
+  await testBothRunsLocalThenInternetAndKeepsSeparateResults();
+  await testBothFailureKeepsCompletedLocalAndIdentifiesInternet();
+  await testBothLocalFailureNeverStartsInternet();
   await testRunModeHandlesBackendTerminalStates();
   await testCancelWinsAgainstInflightStatus();
   await testCancelWinsAgainstInflightFailure();
