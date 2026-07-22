@@ -18,16 +18,17 @@
     var power = Math.pow(10, Math.floor(Math.log(value) / Math.LN10));
     var normalized = value / power;
     if (normalized <= 1) return power;
-    if (normalized <= 2) return 2 * power;
-    if (normalized <= 5) return 5 * power;
-    return 10 * power;
+    if (normalized <= 2) return Math.min(Number.MAX_VALUE, 2 * power);
+    if (normalized <= 5) return Math.min(Number.MAX_VALUE, 5 * power);
+    return Math.min(Number.MAX_VALUE, 10 * power);
   }
 
   function scaleFor(value, current) {
     var sample = Math.max(0, finite(value, 0));
     var activeScale = Math.max(0, finite(current, 0));
     // Five percent tolerance keeps borderline samples on the lower nice scale.
-    var nextScale = niceCeiling(sample * 1.2 * 0.95);
+    var target = sample * 1.2 * 0.95;
+    var nextScale = isFinite(target) ? niceCeiling(target) : Number.MAX_VALUE;
     return Math.max(activeScale, nextScale);
   }
 

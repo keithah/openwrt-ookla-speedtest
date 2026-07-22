@@ -34,6 +34,9 @@ jobs:
       - name: Frontend contract
         run: node tests/test_frontend_contract.js
 
+      - name: Gauge model
+        run: node tests/test_gauge.js
+
       - name: Install layout contract
         run: bash -x tests/install-test.sh
 
