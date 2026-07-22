@@ -1,6 +1,7 @@
 """Contract tests for the planned LuCI/GL.iNet speedtest web package."""
 
 import json
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -166,6 +167,8 @@ class PackageLayoutContractTests(unittest.TestCase):
 
     def test_rpcd_acl_is_limited_to_fixed_methods(self):
         acl = PACKAGE / "luci-app-ookla-speedtest-web/usr/share/rpcd/acl.d/luci-app-ookla-speedtest-web.json"
+        rpcd = PACKAGE / "luci-app-ookla-speedtest-web/usr/libexec/rpcd/ookla-speedtest-web"
+        luci = PACKAGE / "luci-app-ookla-speedtest-web/www/luci-static/resources/view/ookla-speedtest-web/main.js"
         data = json.loads(acl.read_text())
         text = acl.read_text()
         self.assertNotIn('"*"', text)
@@ -175,8 +178,14 @@ class PackageLayoutContractTests(unittest.TestCase):
         for method in methods:
             self.assertIn(method, blob)
         acl_data = data["luci-app-ookla-speedtest-web"]
-        self.assertEqual(acl_data["read"]["ubus"]["ookla-speedtest-webd"], ["status", "servers", "history"])
-        self.assertEqual(acl_data["write"]["ubus"]["ookla-speedtest-webd"], ["start", "start_live", "live_status", "cancel_live", "delete_history", "clear_history", "settings", "accept_terms", "local_download", "local_upload", "record_local"])
+        rpcd_object = rpcd.name
+        luci_object = re.search(r"rpc\.declare\(\{object:['\"]([^'\"]+)", luci.read_text())
+        self.assertIsNotNone(luci_object)
+        self.assertEqual(luci_object.group(1), rpcd_object)
+        self.assertEqual(list(acl_data["read"]["ubus"]), [rpcd_object])
+        self.assertEqual(list(acl_data["write"]["ubus"]), [rpcd_object])
+        self.assertEqual(acl_data["read"]["ubus"][rpcd_object], ["status", "servers", "history"])
+        self.assertEqual(acl_data["write"]["ubus"][rpcd_object], ["start", "start_live", "live_status", "cancel_live", "delete_history", "clear_history", "settings", "accept_terms", "local_download", "local_upload", "record_local"])
 
     def test_rpcd_live_method_schemas_are_exact(self):
         rpcd = PACKAGE / "luci-app-ookla-speedtest-web/usr/libexec/rpcd/ookla-speedtest-web"

@@ -3,13 +3,13 @@
     "description": "Ookla speedtest web access",
     "read": {
       "ubus": {
-        "ookla-speedtest-webd": ["status", "servers", "history"]
+        "ookla-speedtest-web": ["status", "servers", "history"]
       },
       "uci": ["ookla-speedtest-webd"]
     },
     "write": {
       "ubus": {
-        "ookla-speedtest-webd": ["start", "start_live", "live_status", "cancel_live", "delete_history", "clear_history", "settings", "accept_terms", "local_download", "local_upload", "record_local"]
+        "ookla-speedtest-web": ["start", "start_live", "live_status", "cancel_live", "delete_history", "clear_history", "settings", "accept_terms", "local_download", "local_upload", "record_local"]
       }
     }
   }
