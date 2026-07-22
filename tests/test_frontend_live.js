@@ -456,6 +456,47 @@ async function testLostCommittedRecordResponseRecoversAuthoritativeResult() {
   assert.equal(h.app.state.history[0].id, runId);
 }
 
+async function testLostRecordResponseReusesOverlappingCommittedCancellation() {
+  for (const recordRejectsFirst of [true, false]) {
+    const record = deferred(), cancellation = deferred();
+    const runId = recordRejectsFirst
+      ? 'abababababababababababababababab'
+      : 'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd';
+    const h = harness((method, params) => {
+      if (method === 'begin_local') return Promise.resolve({ ok: true, run_id: runId, state: 'active' });
+      if (method === 'local_download') return Promise.resolve({ ok: true, bytes: params.bytes });
+      if (method === 'local_upload') return Promise.resolve({ ok: true, bytes: params.data.length });
+      if (method === 'record_local') return record.promise;
+      if (method === 'cancel_local') return cancellation.promise;
+      if (method === 'history') return Promise.resolve({ ok: true, items: [{ id: runId, run_id: runId, kind: 'device-router', outcome: 'success' }] });
+      throw new Error('unexpected ' + method);
+    }, { local: { measurementMs: 3000, maxBatches: 1 } });
+    const run = h.app.runMode('device-router');
+    await flushUntil(() => h.calls.some(call => call.method === 'record_local'));
+    const cancel = h.app.cancelTest();
+    await flushUntil(() => h.calls.some(call => call.method === 'cancel_local'));
+
+    if (recordRejectsFirst) {
+      record.reject(new Error('response lost after commit'));
+      await flush();
+      cancellation.resolve({ ok: false, state: 'committed', error: { code: 'too_late' } });
+    } else {
+      cancellation.resolve({ ok: false, state: 'committed', error: { code: 'too_late' } });
+      await cancel;
+      record.reject(new Error('response lost after commit'));
+    }
+
+    await cancel;
+    await run;
+    assert.equal(h.calls.filter(call => call.method === 'record_local').length, 1);
+    assert.equal(h.calls.filter(call => call.method === 'cancel_local').length, 1, 'record recovery reuses the user cancellation');
+    assert.equal(h.calls.filter(call => call.method === 'history').length, 1);
+    assert.equal(h.app.state.status, 'done');
+    assert.equal(h.app.state.results.local.kind, 'device-router');
+    assert.equal(h.app.state.history[0].id, runId);
+  }
+}
+
 async function testSupersedingRunCancelsInflightLocalRecord() {
   const record = deferred();
   const h = harness((method, params) => {
@@ -866,6 +907,7 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testCancelWinsAgainstInflightLocalRecord();
   await testLocalRecordWinnerIsAuthoritativeOverCancellation();
   await testLostCommittedRecordResponseRecoversAuthoritativeResult();
+  await testLostRecordResponseReusesOverlappingCommittedCancellation();
   await testSupersedingRunCancelsInflightLocalRecord();
   await testLocalFailuresReleaseReservationAndKeepOriginalError();
   await testLocalMeasurementUsesFullWindowAndCumulativeElapsed();
