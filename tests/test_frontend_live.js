@@ -203,6 +203,26 @@ async function testMalformedBackendStateIsStableError() {
   assert.equal(h.app.state.phase, 'error');
 }
 
+async function testRunningStartingPhaseNormalizesBeforeProgress() {
+  const responses = [
+    { ok: true, job_id: 'starting-job' },
+    status('starting-job', { phase: 'starting', progress: 0 }),
+    status('starting-job', { phase: 'download', progress: 0.25, download_mbps: 40, download_trace: [{ timestamp: 1, value: 40 }] }),
+    complete('starting-job', 80)
+  ];
+  const h = harness(() => Promise.resolve(responses.shift()));
+  const run = h.app.internetTest();
+  await flush();
+  assert.equal(h.app.state.status, 'running');
+  assert.equal(h.app.state.phase, 'ping');
+  assert.equal(h.nodes['live-gauge'].attributes['data-phase'], 'ping');
+  await h.timers.tick(500);
+  assert.equal(h.app.state.phase, 'download');
+  await h.timers.tick(500);
+  await run;
+  assert.equal(h.app.state.status, 'done');
+}
+
 async function testRunModeUsesTermsServerLiveAndHistory() {
   const h = harness((method, params) => {
     if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
@@ -319,6 +339,114 @@ async function testCancelWinsAgainstInflightFailure() {
   assert.equal(h.app.state.status, 'cancelled');
 }
 
+async function testCancelDuringPendingStartCancelsBeforePolling() {
+  const start = deferred();
+  const h = harness(method => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'start_live') return start.promise;
+    if (method === 'cancel_live') return Promise.resolve({ ok: true, job_id: 'pending-job', state: 'cancelled' });
+    throw new Error('unexpected ' + method);
+  });
+  const run = h.app.runMode('router-internet');
+  await flush();
+  const cancellation = await h.app.cancelTest();
+  assert.equal(cancellation.pending, true);
+  assert.equal(h.app.state.cancelRequested, true);
+  assert.equal(h.app.state.status, 'cancelling');
+  start.resolve({ ok: true, job_id: 'pending-job' });
+  await run;
+  assert.equal(h.calls.filter(call => call.method === 'cancel_live').length, 1);
+  assert.equal(h.calls.some(call => call.method === 'live_status'), false);
+  assert.equal(h.app.state.status, 'cancelled');
+}
+
+async function testFailedCancelResumesPollingWithoutUnhandledRejection() {
+  for (const failure of ['transport', 'job_not_running']) {
+    let polls = 0;
+    const h = harness(method => {
+      if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+      if (method === 'start_live') return Promise.resolve({ ok: true, job_id: failure + '-job' });
+      if (method === 'live_status') {
+        polls++;
+        return Promise.resolve(polls === 1 ? status(failure + '-job', { phase: 'download', progress: 0.2, download_mbps: 25 }) : complete(failure + '-job', 125));
+      }
+      if (method === 'cancel_live') return failure === 'transport'
+        ? Promise.reject(new Error('cancel transport failed'))
+        : Promise.resolve({ ok: false, error: { code: 'job_not_running' } });
+      if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+      throw new Error('unexpected ' + method);
+    });
+    const run = h.app.runMode('router-internet');
+    await flush();
+    const outcome = await h.app.cancelTest();
+    assert.equal(outcome.ok, false);
+    assert.equal(h.app.state.cancelRequested, false);
+    assert.equal(h.app.state.status, 'running');
+    await h.timers.tick(500);
+    await run;
+    assert.equal(h.app.state.status, 'done');
+    assert.equal(h.app.state.download, 125);
+    assert.equal(polls, 2);
+  }
+}
+
+async function testTerminalCancelClearsScheduledPollWakeup() {
+  let polls = 0;
+  const h = harness(method => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'timer-job' });
+    if (method === 'live_status') { polls++; return Promise.resolve(status('timer-job', { phase: 'download', progress: 0.2, download_mbps: 20 })); }
+    if (method === 'cancel_live') return Promise.resolve({ ok: true, job_id: 'timer-job', state: 'cancelled' });
+    throw new Error('unexpected ' + method);
+  });
+  const run = h.app.runMode('router-internet');
+  await flush();
+  await h.app.cancelTest();
+  await run;
+  await h.timers.tick(500);
+  assert.equal(polls, 1, 'acknowledged cancellation clears the scheduled polling wakeup');
+  assert.equal(h.app.state.status, 'cancelled');
+}
+
+async function testSupersedingRunClearsScheduledPollWakeup() {
+  let starts = 0, oldPolls = 0;
+  const h = harness((method, params) => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: ++starts === 1 ? 'scheduled-old' : 'scheduled-new' });
+    if (method === 'live_status') {
+      if (params.job_id === 'scheduled-old') { oldPolls++; return Promise.resolve(status('scheduled-old', { phase: 'download', progress: 0.2, download_mbps: 10 })); }
+      return Promise.resolve(complete('scheduled-new', 210));
+    }
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    throw new Error('unexpected ' + method);
+  });
+  const oldRun = h.app.runMode('router-internet');
+  await flush();
+  await h.app.runMode('router-internet');
+  await oldRun;
+  await h.timers.tick(500);
+  assert.equal(oldPolls, 1, 'supersession clears the old scheduled polling wakeup');
+  assert.equal(h.app.state.download, 210);
+}
+
+async function testTraceBoundsWorkBeforeValidation() {
+  const oldMalformed = { timestamp: 0, value: Infinity };
+  const retained = Array.from({ length: 120 }, (_, index) => ({ timestamp: index + 1, value: index + 1 }));
+  const responses = [
+    { ok: true, job_id: 'trace-job' },
+    status('trace-job', { phase: 'download', progress: 0.5, download_mbps: 120, download_trace: [oldMalformed].concat(retained) }),
+    complete('trace-job', 120)
+  ];
+  const h = harness(() => Promise.resolve(responses.shift()));
+  const run = h.app.internetTest();
+  await flush();
+  assert.equal(h.app.state.status, 'running');
+  assert.equal(h.app.state.traces.download.length, 120);
+  assert.equal(h.app.state.traces.download[0], 1);
+  await h.timers.tick(500);
+  await run;
+}
+
 async function testStaleSuccessCannotOverwriteNewRun() {
   const oldLive = deferred();
   let starts = 0;
@@ -390,14 +518,20 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testStaleResponsesAreIgnored();
   await testCancelIsImmediateAndSingleShot();
   await testMalformedBackendStateIsStableError();
+  await testRunningStartingPhaseNormalizesBeforeProgress();
   await testRunModeUsesTermsServerLiveAndHistory();
   await testTermsAcceptanceResumesLiveRun();
   await testDeviceRouterKeepsLocalBridge();
   await testRunModeHandlesBackendTerminalStates();
   await testCancelWinsAgainstInflightStatus();
   await testCancelWinsAgainstInflightFailure();
+  await testCancelDuringPendingStartCancelsBeforePolling();
+  await testFailedCancelResumesPollingWithoutUnhandledRejection();
+  await testTerminalCancelClearsScheduledPollWakeup();
+  await testSupersedingRunClearsScheduledPollWakeup();
   await testStaleSuccessCannotOverwriteNewRun();
   await testStaleFailureCannotErrorNewRunOrRetry();
   await testMalformedNumericSamplesBecomeStableErrors();
+  await testTraceBoundsWorkBeforeValidation();
   console.log('frontend live polling ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });
