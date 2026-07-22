@@ -6,6 +6,12 @@ assert.match(html,/<script src=["']gauge\.js["']><\/script>\s*<script src=["']ap
 assert.match(html,/id=["']go-control["']/); assert.match(html,/History/); assert.match(html,/Analytics/); assert.match(html,/Settings/); assert.match(html,/About/);
 for(const id of ['live-gauge','gauge-needle','gauge-value','gauge-unit','phase-label','metric-download','metric-upload','metric-ping','metric-jitter','metric-loss','download-trace','upload-trace','cancel-test']) assert.match(html,new RegExp(`id=["']${id}["']`),`missing semantic gauge node #${id}`);
 const stageStart=html.indexOf('id="test-stage"'),resultsStart=html.indexOf('id="results"'),stageEnd=html.indexOf('</section>',stageStart);assert.ok(stageStart>=0&&resultsStart>stageStart&&resultsStart<stageEnd,'results must belong to the test stage');
+const arc=html.match(/class="gauge-track" d="M([\d.]+) ([\d.]+) A[\d. ]+ ([\d.]+) ([\d.]+)"/);assert.ok(arc,'missing gauge arc geometry');
+const needle=html.match(/id="gauge-needle"[^>]*>[\s\S]*?<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/);assert.ok(needle,'missing gauge needle geometry');
+function rotateNeedle(angle){const cx=+needle[1],cy=+needle[2],x=+needle[3]-cx,y=+needle[4]-cy,r=angle*Math.PI/180;return{x:cx+x*Math.cos(r)-y*Math.sin(r),y:cy+x*Math.sin(r)+y*Math.cos(r)}}
+function assertAligned(point,endX,endY,message){const cx=+needle[1],cy=+needle[2],ax=point.x-cx,ay=point.y-cy,bx=endX-cx,by=endY-cy;assert.ok(Math.abs(ax*by-ay*bx)<1e-6&&ax*bx+ay*by>0,message)}
+assertAligned(rotateNeedle(-135),+arc[1],+arc[2],'zero-speed needle must point at the lower-left dial endpoint');
+assertAligned(rotateNeedle(135),+arc[3],+arc[4],'max-speed needle must point at the lower-right dial endpoint');
 assert.match(html,/id=["']live-announcer["'][^>]*aria-live=["']polite["'][^>]*data-throttle-ms=["']\d+["']/);
 assert.match(html,/Router\s*→\s*Internet/); assert.match(html,/Device\s*→\s*Router/);
 assert.match(js,/subscribe\s*\(/); assert.match(js,/navigate\s*\(/); assert.match(js,/call\s*\(/); assert.match(js,/textContent/); assert.doesNotMatch(js,/innerHTML/);
