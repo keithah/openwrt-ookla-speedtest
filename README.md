@@ -110,7 +110,7 @@ git clone https://github.com/keithah/openwrt-ookla-speedtest.git \
 git clone https://github.com/keithah/openwrt-ookla-speedtest-cli.git \
   package/openwrt-ookla-speedtest-cli
 make menuconfig
-make package/ookla-speedtest-web/compile V=s
+make package/openwrt-ookla-speedtest/compile V=s
 ```
 
 The web package depends on `ookla-speedtest-cli`; it does not package the

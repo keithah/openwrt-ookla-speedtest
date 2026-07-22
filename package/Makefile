@@ -50,7 +50,7 @@ define Package/gl-app-ookla-speedtest-web/install
 	$(CP) ./gl-app-ookla-speedtest-web/usr $(1)/
 	$(CP) ./gl-app-ookla-speedtest-web/www $(1)/
 	$(CP) ./shared/ookla-speedtest-web $(1)/www/
-	chmod 0755 $(1)/usr/lib/oui-httpd/rpc/ookla-speedtest-web
+	chmod 0644 $(1)/usr/lib/oui-httpd/rpc/ookla-speedtest-web
 endef
 
 $(eval $(call BuildPackage,ookla-speedtest-webd))

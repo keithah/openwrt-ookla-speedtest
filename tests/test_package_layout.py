@@ -16,6 +16,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         required = [
             "Makefile",
             "ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd",
+            "ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd-worker",
             "ookla-speedtest-webd/etc/init.d/ookla-speedtest-webd",
             "ookla-speedtest-webd/etc/config/ookla-speedtest-webd",
             "ookla-speedtest-webd/etc/uci-defaults/99-ookla-speedtest-webd",
@@ -78,6 +79,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertTrue((PACKAGE / "ookla-speedtest-webd/CONTROL/conffiles").is_file())
         for relative in (
             "ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd",
+            "ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd-worker",
             "ookla-speedtest-webd/etc/init.d/ookla-speedtest-webd",
             "luci-app-ookla-speedtest-web/usr/libexec/rpcd/ookla-speedtest-web",
         ):
@@ -88,6 +90,23 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertNotRegex(makefile, r"\$\(CP\) \./(?:ookla-speedtest-webd|luci-app-ookla-speedtest-web|gl-app-ookla-speedtest-web)/\* \$\(1\)/")
         self.assertRegex(makefile, r"Package/luci-app-ookla-speedtest-web[\s\S]*DEPENDS:=.*\+luci-base")
         self.assertRegex(makefile, r"Package/luci-app-ookla-speedtest-web[\s\S]*DEPENDS:=.*\+rpcd")
+
+    def test_glinet_install_rule_keeps_lua_rpc_module_non_executable(self):
+        makefile = (PACKAGE / "Makefile").read_text()
+        install_rule = re.search(
+            r"define Package/gl-app-ookla-speedtest-web/install\n(.*?)\nendef",
+            makefile,
+            re.S,
+        )
+        self.assertIsNotNone(install_rule)
+        self.assertRegex(
+            install_rule.group(1),
+            r"chmod 0644 \$\(1\)/usr/lib/oui-httpd/rpc/ookla-speedtest-web",
+        )
+        self.assertNotRegex(
+            install_rule.group(1),
+            r"chmod 0755 .*usr/lib/oui-httpd/rpc/ookla-speedtest-web",
+        )
 
     def test_package_does_not_vendor_binary_archive_key_or_http_daemon(self):
         package_path = PACKAGE / "ookla-speedtest-webd"
@@ -125,6 +144,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertIn("http://router/cgi-bin/luci/admin/services/ookla-speedtest-web", readme)
         self.assertRegex(readme, r"(?i)GL\.iNet.*Applications")
         self.assertRegex(readme, r"(?i)GoodCloud.*Remote Web Access")
+        self.assertIn("make package/openwrt-ookla-speedtest/compile V=s", readme)
 
     def test_ci_and_release_workflow_contracts(self):
         workflows = ROOT / ".github" / "workflows"
