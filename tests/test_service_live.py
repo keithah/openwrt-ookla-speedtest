@@ -291,10 +291,6 @@ for event in events:
         self.assertEqual(complete["ping_ms"], 12.5)
         self.assertEqual(complete["download_mbps"], 100.0)
         self.assertEqual(complete["upload_mbps"], 20.0)
-        self.assertEqual(
-            complete["phases_seen"],
-            ["starting", "ping", "download", "upload", "complete"],
-        )
         self.assertEqual(complete["result"]["server"]["id"], 42)
         self.assertIn("network_context", complete["result"])
 
@@ -537,6 +533,74 @@ for event in events:
             service, "lock", return_value=("storage_error", None)
         ), mock.patch.object(
             worker_module.time, "sleep", side_effect=AssertionError("storage error retried")
+        ):
+            result = worker_module.run(job_id, "42")
+
+        self.assertEqual(result, 0)
+        state = service.readjob(job_id)
+        self.assertEqual(state["state"], "error")
+        self.assertEqual(state["error"]["code"], "storage_error")
+        self.assertFalse(Path(service.startingfile(job_id)).exists())
+        held = service.lock()
+        self.assertNotEqual(held, (None, None))
+        service.unlock(held)
+
+    def test_cleanup_reconciles_dead_nonterminal_jobs(self):
+        jobs_dir = self.run_dir / "jobs"
+        jobs_dir.mkdir()
+        for index, job_state in enumerate(("starting", "running")):
+            with self.subTest(state=job_state):
+                job_id = ("d" if index == 0 else "e") * 32
+                job_file = jobs_dir / (job_id + ".json")
+                marker = jobs_dir / (job_id + ".starting")
+                job_file.write_text(
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "job_id": job_id,
+                            "state": job_state,
+                            "phase": job_state,
+                            "pid": 999_999_999,
+                        }
+                    )
+                )
+                marker.write_text(json.dumps({"job_id": job_id}))
+                old = time.time() - 11
+                os.utime(job_file, (old, old))
+                os.utime(marker, (old, old))
+
+                reconciled = self.rpc("live_status", job_id=job_id)
+
+                self.assertEqual(reconciled["state"], "error")
+                self.assertEqual(reconciled["error"]["code"], "worker_exited")
+                self.assertFalse(marker.exists())
+
+    def test_initial_worker_state_failure_becomes_terminal_and_releases_lock(self):
+        service = self.load_script("initial_write_service", SERVICE)
+        worker_module = self.load_script("initial_write_worker", WORKER)
+        job_id = "f" * 32
+        initial = {
+            "ok": True,
+            "job_id": job_id,
+            "state": "starting",
+            "phase": "starting",
+            "started": int(time.time()),
+            "pid": os.getpid(),
+        }
+        service.writejob(job_id, initial)
+        Path(service.startingfile(job_id)).write_text(json.dumps({"job_id": job_id}))
+        real_writejob = service.writejob
+        writes = 0
+
+        def fail_first_write(target_job_id, state):
+            nonlocal writes
+            writes += 1
+            if writes == 1:
+                raise OSError("injected initial worker-state failure")
+            return real_writejob(target_job_id, state)
+
+        with mock.patch.object(worker_module, "load_service", return_value=service), mock.patch.object(
+            service, "writejob", side_effect=fail_first_write
         ):
             result = worker_module.run(job_id, "42")
 

@@ -119,6 +119,11 @@ def live_ttl():
   value=int(os.environ.get('OOKLA_LIVE_JOB_TTL','600'))
   return value if value>=0 else 600
  except Exception: return 600
+def live_stale_grace():
+ try:
+  value=int(os.environ.get('OOKLA_LIVE_STALE_GRACE','10'))
+  return value if value>=0 else 10
+ except Exception: return 10
 def stop_spawned_worker(child,job_id):
  deadline=time.monotonic()+.5; group_verified=False
  while child.poll() is None and time.monotonic()<deadline:
@@ -146,9 +151,14 @@ def cleanup_live_jobs():
   if not re.fullmatch(r'[0-9a-f]{32}\.json',name): continue
   path=os.path.join(jobsdir,name)
   try:
-   row=json.load(open(path)); terminal=row.get('state') in ('complete','cancelled','error')
+   with open(path) as f: row=json.load(f)
+   terminal=row.get('state') in ('complete','cancelled','error')
    age=now-os.path.getmtime(path)
    if terminal and age>ttl: os.unlink(path)
+   elif row.get('state') in ('starting','running') and age>live_stale_grace() and not verified_worker_pid(row.get('pid'),name[:-5]):
+    row.update({'ok':False,'state':'error','phase':'error','finished':int(now),'error':{'code':'worker_exited'}}); writejob(name[:-5],row)
+    try: os.unlink(startingfile(name[:-5]))
+    except OSError: pass
   except Exception: pass
  try:
   markers=[name for name in os.listdir(jobsdir) if re.fullmatch(r'[0-9a-f]{32}\.starting',name)]

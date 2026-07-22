@@ -106,9 +106,6 @@ def run(job_id, server_id):
         finally:
             release_marker(service, job_id)
         return 0
-    release_marker(service, job_id)
-    state.update({"state": "running", "phase": "starting", "pid": os.getpid()})
-    service.writejob(job_id, state)
     command = [
         service.binary,
         "--accept-license",
@@ -121,7 +118,12 @@ def run(job_id, server_id):
     process = None
     error_code = None
     result = None
+    state_initialized = False
     try:
+        release_marker(service, job_id)
+        state.update({"state": "running", "phase": "starting", "pid": os.getpid()})
+        service.writejob(job_id, state)
+        state_initialized = True
         process = subprocess.Popen(
             command,
             stdin=subprocess.DEVNULL,
@@ -183,9 +185,6 @@ def run(job_id, server_id):
                 state.update(reduced)
                 state["state"] = "running"
                 phase = reduced.get("phase")
-                phases_seen = state.setdefault("phases_seen", [])
-                if phase and (not phases_seen or phases_seen[-1] != phase):
-                    phases_seen.append(phase)
                 if phase in ("download", "upload"):
                     trace_name = phase + "_trace"
                     trace = state.setdefault(trace_name, [])
@@ -252,13 +251,14 @@ def run(job_id, server_id):
         return 0
     except Exception:
         finished = int(time.time())
+        failure_code = "speedtest_failed" if state_initialized else "storage_error"
         state.update(
             {
                 "ok": False,
                 "state": "error",
                 "phase": "error",
                 "finished": finished,
-                "error": {"code": "speedtest_failed"},
+                "error": {"code": failure_code},
             }
         )
         try:
@@ -268,7 +268,7 @@ def run(job_id, server_id):
                     "timestamp": finished,
                     "kind": "router-internet",
                     "outcome": "error",
-                    "error": {"code": "speedtest_failed"},
+                    "error": {"code": failure_code},
                 }
             )
             service.writejob(job_id, state)
