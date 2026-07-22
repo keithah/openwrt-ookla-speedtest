@@ -69,7 +69,8 @@ def writehist(items):
  atomic_write(hist,''.join(json.dumps(x,separators=(',',':'))+'\n' for x in items))
 def readhist():
  try:
-  lines=open(hist).read().splitlines(); n=retention(); return [json.loads(x) for x in (lines if n==0 else lines[-n:]) if x.strip()]
+  with open(hist) as f: lines=f.read().splitlines()
+  n=retention(); return [json.loads(x) for x in (lines if n==0 else lines[-n:]) if x.strip()]
  except: return []
 def network_context():
  names=[]
@@ -144,10 +145,18 @@ def stop_spawned_worker(child,job_id):
   try: child.wait(timeout=1)
   except Exception: pass
 def file_identity(st): return (st.st_dev,st.st_ino,st.st_mtime_ns,st.st_size)
+def active_cancellation(job_id,now):
+ path=startingfile(job_id)
+ try:
+  if now-os.path.getmtime(path)>live_stale_grace(): return False
+  with open(path) as f: marker=json.load(f)
+  return marker.get('job_id')==job_id and marker.get('purpose')=='cancelling'
+ except Exception: return False
 def reconcile_stale_job(job_id,snapshot,snapshot_identity,now):
  held=lock(ignore_starting=True)
  if held==(None,None) or (isinstance(held,tuple) and held[0]=='storage_error'): return
  try:
+  if active_cancellation(job_id,now): return
   path=jobfile(job_id); st=os.stat(path)
   if file_identity(st)!=snapshot_identity: return
   current=readjob(job_id)
@@ -210,11 +219,12 @@ def main(req):
   try:
    try:
     fd=os.open(markerpath,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-    with os.fdopen(fd,'w') as f: json.dump({'job_id':jid},f)
+    with os.fdopen(fd,'w') as f: json.dump({'job_id':jid,'purpose':'cancelling'},f)
     reserved=True
    except FileExistsError:
-    marker=json.load(open(markerpath))
+    with open(markerpath) as f: marker=json.load(f)
     if marker.get('job_id')!=jid: return {'ok':False,'error':{'code':'busy'}}
+    atomic_write(markerpath,json.dumps({'job_id':jid,'purpose':'cancelling'},separators=(',',':')))
     reserved=True
    try: os.killpg(int(pid),signal.SIGTERM)
    except OSError: return {'ok':False,'error':{'code':'job_not_running'}}
@@ -234,7 +244,7 @@ def main(req):
    if held is not None: unlock(held)
    if reserved:
     try:
-     marker=json.load(open(markerpath))
+     with open(markerpath) as f: marker=json.load(f)
      if marker.get('job_id')==jid: os.unlink(markerpath)
     except Exception: pass
  if m=='start_live':
@@ -248,7 +258,7 @@ def main(req):
   try:
    try:
     fd=os.open(markerpath,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-    with os.fdopen(fd,'w') as f: json.dump({'job_id':jid},f)
+    with os.fdopen(fd,'w') as f: json.dump({'job_id':jid,'purpose':'starting'},f)
     marked=True
    except FileExistsError: return {'ok':False,'error':{'code':'busy'}}
    initial={'ok':True,'job_id':jid,'state':'starting','phase':'starting','started':int(time.time())}

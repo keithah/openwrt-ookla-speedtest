@@ -650,6 +650,69 @@ for event in events:
         self.assertTrue(completed_before_lock)
         self.assertEqual(service.readjob(job_id), complete)
 
+    def test_cancellation_reservation_wins_cleanup_race(self):
+        service = self.load_script("cancel_cleanup_race_service", SERVICE)
+        job_id = "2" * 32
+        service.writejob(
+            job_id,
+            {
+                "ok": True,
+                "job_id": job_id,
+                "state": "running",
+                "phase": "download",
+                "pid": 12345,
+            },
+        )
+        signalled = threading.Event()
+        cancel_waiting = threading.Event()
+        allow_cancel_lock = threading.Event()
+        cancel_thread_id = []
+        real_lock = service.lock
+
+        def fake_killpg(pid, signal_number):
+            self.assertEqual(pid, 12345)
+            cancel_thread_id.append(threading.get_ident())
+            old = time.time() - 11
+            os.utime(service.jobfile(job_id), (old, old))
+            signalled.set()
+
+        def scheduled_lock(*args, **kwargs):
+            if (
+                signalled.is_set()
+                and cancel_thread_id
+                and threading.get_ident() == cancel_thread_id[0]
+                and not allow_cancel_lock.is_set()
+            ):
+                cancel_waiting.set()
+                allow_cancel_lock.wait(timeout=2)
+            return real_lock(*args, **kwargs)
+
+        def worker_is_alive(pid, target_job_id):
+            return not signalled.is_set() and pid == 12345 and target_job_id == job_id
+
+        with mock.patch.object(service.os, "killpg", side_effect=fake_killpg), mock.patch.object(
+            service, "lock", side_effect=scheduled_lock
+        ), mock.patch.object(
+            service, "verified_worker_pid", side_effect=worker_is_alive
+        ):
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                cancelled_future = executor.submit(
+                    service.main, {"method": "cancel_live", "job_id": job_id}
+                )
+                self.assertTrue(signalled.wait(timeout=2))
+                self.assertTrue(cancel_waiting.wait(timeout=2))
+                concurrent_status = service.main(
+                    {"method": "live_status", "job_id": job_id}
+                )
+                allow_cancel_lock.set()
+                cancelled = cancelled_future.result(timeout=2)
+
+        self.assertTrue(cancelled["ok"])
+        self.assertEqual(concurrent_status["state"], "running")
+        self.assertEqual(service.readjob(job_id)["state"], "cancelled")
+        self.assertEqual(service.readhist()[-1]["outcome"], "cancelled")
+        self.assertFalse(Path(service.startingfile(job_id)).exists())
+
 
 if __name__ == "__main__":
     unittest.main()

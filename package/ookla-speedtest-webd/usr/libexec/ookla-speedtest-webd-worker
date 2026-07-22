@@ -51,7 +51,7 @@ def release_marker(service, job_id):
     try:
         with open(path) as handle:
             marker = service.json.load(handle)
-        if marker.get("job_id") == job_id:
+        if marker.get("job_id") == job_id and marker.get("purpose", "starting") == "starting":
             os.unlink(path)
     except Exception:
         pass
