@@ -16,6 +16,7 @@ SERVICE = (
     Path(__file__).resolve().parents[1]
     / "package/ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd"
 )
+WORKER = SERVICE.with_name("ookla-speedtest-webd-worker")
 
 
 class ServiceLiveTests(unittest.TestCase):
@@ -242,6 +243,16 @@ for event in events:
         )
         return json.loads(process.stdout)
 
+    def load_script(self, name, path):
+        with mock.patch.dict(os.environ, self.environment), mock.patch(
+            "sys.argv", [str(path)]
+        ):
+            loader = importlib.machinery.SourceFileLoader(name, str(path))
+            spec = importlib.util.spec_from_loader(loader.name, loader)
+            module = importlib.util.module_from_spec(spec)
+            loader.exec_module(module)
+            return module
+
     def start(self):
         response = self.rpc("start_live", server_id="42")
         if response.get("job_id"):
@@ -275,14 +286,17 @@ for event in events:
         self.assertTrue(started["ok"])
         self.assertRegex(started["job_id"], r"^[0-9a-f]{32}$")
         job_id = started["job_id"]
-        states = self.poll_until_terminal(job_id)
-        phases = [row.get("phase") for row in states]
-        for phase in ("ping", "download", "upload", "complete"):
-            self.assertIn(phase, phases)
-        download = next(row for row in states if row.get("phase") == "download")
-        self.assertEqual(download["download_mbps"], 100.0)
-        complete = states[-1]
+        complete = self.wait_for(job_id, lambda row: row.get("state") == "complete")
+        self.assertEqual(complete["phase"], "complete")
+        self.assertEqual(complete["ping_ms"], 12.5)
+        self.assertEqual(complete["download_mbps"], 100.0)
+        self.assertEqual(complete["upload_mbps"], 20.0)
+        self.assertEqual(
+            complete["phases_seen"],
+            ["starting", "ping", "download", "upload", "complete"],
+        )
         self.assertEqual(complete["result"]["server"]["id"], 42)
+        self.assertIn("network_context", complete["result"])
 
     def test_cancel_records_history_and_allows_a_new_job(self):
         self.mode_file.write_text("slow\n")
@@ -447,6 +461,93 @@ for event in events:
             [row.get("error", {}).get("code") for row in responses].count("busy"),
             1,
         )
+
+    def test_post_spawn_state_failure_terminates_worker_and_releases_lock(self):
+        self.mode_file.write_text("slow\n")
+        module = self.load_script("spawn_failure_service", SERVICE)
+        real_writejob = module.writejob
+        real_popen = module.subprocess.Popen
+        writes = 0
+        children = []
+
+        def fail_pid_write(job_id, state):
+            nonlocal writes
+            writes += 1
+            if writes == 2:
+                raise OSError("injected pid-state failure")
+            return real_writejob(job_id, state)
+
+        def capture_child(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            children.append(child)
+            return child
+
+        try:
+            with mock.patch.dict(os.environ, self.environment), mock.patch.object(
+                module, "writejob", side_effect=fail_pid_write
+            ), mock.patch.object(
+                module.subprocess, "Popen", side_effect=capture_child
+            ):
+                response = module.main({"method": "start_live", "server_id": "42"})
+
+            self.assertEqual(response["error"]["code"], "storage_error")
+            self.assertEqual(len(children), 1)
+            deadline = time.monotonic() + 1
+            while children[0].poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertIsNotNone(children[0].poll(), "detached worker remained alive")
+            self.assertLess(children[0].returncode, 0)
+            held = module.lock()
+            self.assertNotEqual(held, (None, None))
+            module.unlock(held)
+        finally:
+            for child in children:
+                if child.poll() is None:
+                    os.killpg(child.pid, 15)
+                    child.wait(timeout=2)
+
+    def test_cleanup_removes_marker_owned_by_unrelated_live_pid(self):
+        job_id = "b" * 32
+        jobs_dir = self.run_dir / "jobs"
+        jobs_dir.mkdir()
+        job_file = jobs_dir / (job_id + ".json")
+        marker = jobs_dir / (job_id + ".starting")
+        job_file.write_text(
+            json.dumps({"ok": True, "job_id": job_id, "state": "starting", "pid": os.getpid()})
+        )
+        marker.write_text(json.dumps({"job_id": job_id}))
+        old = time.time() - 11
+        os.utime(marker, (old, old))
+
+        self.rpc("live_status", job_id=job_id)
+
+        self.assertFalse(marker.exists())
+
+    def test_worker_storage_error_is_terminal_and_releases_reservation(self):
+        service = self.load_script("storage_error_service", SERVICE)
+        worker_module = self.load_script("storage_error_worker", WORKER)
+        job_id = "c" * 32
+        service.writejob(
+            job_id,
+            {"ok": True, "job_id": job_id, "state": "starting", "started": int(time.time())},
+        )
+        Path(service.startingfile(job_id)).write_text(json.dumps({"job_id": job_id}))
+
+        with mock.patch.object(worker_module, "load_service", return_value=service), mock.patch.object(
+            service, "lock", return_value=("storage_error", None)
+        ), mock.patch.object(
+            worker_module.time, "sleep", side_effect=AssertionError("storage error retried")
+        ):
+            result = worker_module.run(job_id, "42")
+
+        self.assertEqual(result, 0)
+        state = service.readjob(job_id)
+        self.assertEqual(state["state"], "error")
+        self.assertEqual(state["error"]["code"], "storage_error")
+        self.assertFalse(Path(service.startingfile(job_id)).exists())
+        held = service.lock()
+        self.assertNotEqual(held, (None, None))
+        service.unlock(held)
 
 
 if __name__ == "__main__":

@@ -29,20 +29,28 @@ def timeout_seconds():
         return 120
 
 
+class WorkerLockError(Exception):
+    pass
+
+
 def acquire_lock(service):
+    deadline = time.monotonic() + 5
     while True:
         held = service.lock(ignore_starting=True)
-        if held != (None, None) and not (
-            isinstance(held, tuple) and held[0] == "storage_error"
-        ):
+        if isinstance(held, tuple) and held[0] == "storage_error":
+            raise WorkerLockError("storage_error")
+        if held != (None, None):
             return held
+        if time.monotonic() >= deadline:
+            raise WorkerLockError("storage_error")
         time.sleep(0.01)
 
 
 def release_marker(service, job_id):
     path = service.startingfile(job_id)
     try:
-        marker = service.json.load(open(path))
+        with open(path) as handle:
+            marker = service.json.load(handle)
         if marker.get("job_id") == job_id:
             os.unlink(path)
     except Exception:
@@ -66,13 +74,39 @@ def history_result(service, job_id, result):
 
 def run(job_id, server_id):
     service = load_service()
-    held = acquire_lock(service)
-    release_marker(service, job_id)
     state = service.readjob(job_id) or {
         "ok": True,
         "job_id": job_id,
         "started": int(time.time()),
     }
+    try:
+        held = acquire_lock(service)
+    except WorkerLockError as exc:
+        finished = int(time.time())
+        state.update(
+            {
+                "ok": False,
+                "state": "error",
+                "phase": "error",
+                "finished": finished,
+                "error": {"code": str(exc)},
+            }
+        )
+        try:
+            service.append_history(
+                {
+                    "id": job_id,
+                    "timestamp": finished,
+                    "kind": "router-internet",
+                    "outcome": "error",
+                    "error": {"code": str(exc)},
+                }
+            )
+            service.writejob(job_id, state)
+        finally:
+            release_marker(service, job_id)
+        return 0
+    release_marker(service, job_id)
     state.update({"state": "running", "phase": "starting", "pid": os.getpid()})
     service.writejob(job_id, state)
     command = [
@@ -149,6 +183,9 @@ def run(job_id, server_id):
                 state.update(reduced)
                 state["state"] = "running"
                 phase = reduced.get("phase")
+                phases_seen = state.setdefault("phases_seen", [])
+                if phase and (not phases_seen or phases_seen[-1] != phase):
+                    phases_seen.append(phase)
                 if phase in ("download", "upload"):
                     trace_name = phase + "_trace"
                     trace = state.setdefault(trace_name, [])
@@ -199,6 +236,7 @@ def run(job_id, server_id):
                 }
             )
         else:
+            result["network_context"] = service.network_context()
             state.update(
                 {
                     "ok": True,
