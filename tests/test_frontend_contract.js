@@ -30,6 +30,10 @@ assert.match(css,/--cyan\s*:/); assert.match(css,/--violet\s*:/); assert.match(c
 assert.match(css,/\.gauge\[data-status=["']idle["']\]\s+\.gauge-dial/);
 assert.match(css,/\.gauge\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*520px;/s);assert.match(css,/@supports\s*\(aspect-ratio:/);
 assert.match(css,/\.gauge\[data-status=["']done["']\]/);
+assert.match(css,/\.gauge\[data-status="idle"\],[^{]+\{[^}]*width:\s*clamp\(280px,\s*32vw,\s*340px\)/s,'compact shell must remain reference-sized and responsive');
+assert.match(css,/\.go\s*\{[^}]*width:\s*clamp\(190px,\s*20vw,\s*210px\)[^}]*height:\s*clamp\(190px,\s*20vw,\s*210px\)/s,'GO ring must remain large and responsive');
+assert.doesNotMatch(css,/\.go\s*\{[^}]*width:\s*(?:78|92)px/s,'GO must not regress to the tiny installed size');
+assert.match(css,/@media\s*\(max-width:\s*640px\)[\s\S]*?\.go\s*\{[^}]*clamp\(/,'mobile GO sizing must remain responsive');
 assert.match(css,/\.history-scroll\s*\{[^}]*overflow-x:\s*auto/s);
 assert.match(css,/\.history-scroll table\s*\{[^}]*min-width:/s);
 assert.match(js,/aria-pressed/);assert.match(js,/\.disabled\s*=/);

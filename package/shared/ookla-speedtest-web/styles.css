@@ -62,8 +62,8 @@ nav button:hover, .server button:hover { color: var(--cyan); }
 @supports (aspect-ratio: 460 / 390) { .gauge { width: min(100%, 520px); height: auto; aspect-ratio: 460 / 390; } }
 .gauge[data-phase="upload"] { --phase-color: var(--violet); }
 .gauge[data-phase="idle"], .gauge[data-phase="complete"] { --phase-color: #b7c2ca; }
-.gauge[data-status="idle"], .gauge[data-status="done"] { width: 230px; max-width: 230px; height: 230px; margin: 26px auto 20px; }
-.gauge[data-status="preparing"] { width: 230px; max-width: 230px; height: 230px; margin: 26px auto 20px; }
+.gauge[data-status="idle"], .gauge[data-status="done"] { width: clamp(280px, 32vw, 340px); max-width: 340px; height: clamp(280px, 32vw, 340px); margin: 26px auto 20px; }
+.gauge[data-status="preparing"] { width: clamp(280px, 32vw, 340px); max-width: 340px; height: clamp(280px, 32vw, 340px); margin: 26px auto 20px; }
 @supports (aspect-ratio: 1) { .gauge[data-status="idle"], .gauge[data-status="done"] { height: auto; aspect-ratio: 1; } }
 @supports (aspect-ratio: 1) { .gauge[data-status="preparing"] { height: auto; aspect-ratio: 1; } }
 .gauge[data-status="idle"] .gauge-dial, .gauge[data-status="done"] .gauge-dial { opacity: 0; }
@@ -84,7 +84,7 @@ nav button:hover, .server button:hover { color: var(--cyan); }
 #gauge-value { margin-top: 4px; color: var(--ink); font-size: clamp(3rem, 8vw, 4.8rem); font-weight: 300; line-height: .98; letter-spacing: -.06em; font-variant-numeric: tabular-nums; }
 #gauge-unit { margin-top: 7px; color: var(--muted); font-size: .67rem; letter-spacing: .12em; text-transform: uppercase; }
 .test-controls { position: absolute; bottom: 8%; left: 50%; transform: translateX(-50%); }
-.go { width: 92px; height: 92px; padding: 0; border: 2px solid var(--cyan); border-radius: 50%; background: #0a1925; color: #fff; box-shadow: 0 0 0 8px #102838, 0 0 28px #20d9f733; cursor: pointer; font-size: 1.45rem; font-weight: 500; letter-spacing: .04em; transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
+.go { width: clamp(190px, 20vw, 210px); height: clamp(190px, 20vw, 210px); padding: 0; border: 2px solid var(--cyan); border-radius: 50%; background: #0a1925; color: #fff; box-shadow: 0 0 0 8px #102838, 0 0 28px #20d9f733; cursor: pointer; font-size: clamp(1.65rem, 3vw, 2rem); font-weight: 500; letter-spacing: .04em; transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
 .go:hover { transform: scale(1.035); box-shadow: 0 0 0 8px #102838, 0 0 38px #20d9f750; }
 .cancel { padding: 9px 18px; border: 1px solid #465765; border-radius: 999px; background: #0a1925; color: #c9d2d9; cursor: pointer; font-size: .78rem; }
 .cancel:hover { border-color: var(--phase-color); color: #fff; }
@@ -144,7 +144,7 @@ dialog button { padding: 9px 14px; }
   .primary-metric + .primary-metric { border-top: 1px solid var(--line); border-left: 0; }
   .gauge { margin-top: -5px; }
   .gauge-readout { top: 46%; }
-  .go { width: 78px; height: 78px; font-size: 1.2rem; }
+  .go { width: clamp(150px, 54vw, 180px); height: clamp(150px, 54vw, 180px); font-size: clamp(1.35rem, 6vw, 1.7rem); }
   .connection-details { grid-template-columns: 1fr; }
   .connection-details > div + div { border-top: 1px solid var(--line); border-left: 0; }
   .results { grid-template-columns: 1fr; }
