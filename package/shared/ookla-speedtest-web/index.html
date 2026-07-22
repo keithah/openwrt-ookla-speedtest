@@ -11,9 +11,9 @@
   <header><div class="brand">SPEEDTEST <small>UNOFFICIAL</small></div><nav aria-label="Primary"><button data-view="history">History</button><button data-view="analytics">Analytics</button><button data-view="settings">Settings</button><button data-view="about">About</button></nav></header>
   <section class="hero test-stage" id="test-stage">
     <div class="mode-picker" role="group" aria-label="Test mode">
-      <button class="active" data-mode="router-internet">Router → Internet</button>
-      <button data-mode="device-router">Device → Router</button>
-      <button data-mode="both">Both</button>
+      <button class="active" data-mode="router-internet" aria-pressed="true">Router → Internet</button>
+      <button data-mode="device-router" aria-pressed="false">Device → Router</button>
+      <button data-mode="both" aria-pressed="false">Both</button>
     </div>
     <div class="route" id="route-label">Router → Internet</div>
     <div class="primary-metrics" id="primary-metrics" hidden>

@@ -28,6 +28,11 @@ assert.match(css,/--cyan\s*:/); assert.match(css,/--violet\s*:/); assert.match(c
 assert.match(css,/\.gauge\[data-status=["']idle["']\]\s+\.gauge-dial/);
 assert.match(css,/\.gauge\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*520px;/s);assert.match(css,/@supports\s*\(aspect-ratio:/);
 assert.match(css,/\.gauge\[data-status=["']done["']\]/);
+assert.match(css,/\.history-scroll\s*\{[^}]*overflow-x:\s*auto/s);
+assert.match(css,/\.history-scroll table\s*\{[^}]*min-width:/s);
+assert.match(js,/aria-pressed/);assert.match(js,/\.disabled\s*=/);
+assert.match(html,/data-mode=["']router-internet["'][^>]*aria-pressed=["']true["']/);
+assert.match(html,/data-mode=["']device-router["'][^>]*aria-pressed=["']false["']/);
 for(const mode of ['router-internet','device-router','both']) assert.match(html,new RegExp(`data-mode=["']${mode}["']`));
 assert.match(js,/local_download/); assert.match(js,/local_upload/); assert.match(js,/Promise\.all/);
 assert.match(js,/size=32768/); assert.doesNotMatch(js,/size=131072/);

@@ -65,6 +65,7 @@ function harness(handler, options) {
     'server-detail', 'results', 'view', 'terms-dialog', 'accept-terms', 'server-picker', 'server-panel',
     'server-search', 'server-results', 'phase-announcer', 'error-message', 'retry-test'];
   const nodes = Object.fromEntries(ids.map(id => [id, new FakeNode()]));
+  const modeButtons = ['router-internet', 'device-router', 'both'].map(mode => { const node = new FakeNode(); node.setAttribute('data-mode', mode); return node; });
   nodes['live-announcer'].setAttribute('data-throttle-ms', '1000');
   const latency = new FakeNode();
   const scaleLabels = Array.from({ length: 5 }, () => new FakeNode());
@@ -75,7 +76,7 @@ function harness(handler, options) {
     createTextNode(value) { const node = new FakeNode(); node.textContent = value; return node; },
     getElementById(id) { return nodes[id] || null; },
     querySelector(selector) { return selector === '.latency-strip' ? latency : null; },
-    querySelectorAll(selector) { return selector === '[data-gauge-scale]' ? scaleLabels : []; }
+    querySelectorAll(selector) { return selector === '[data-gauge-scale]' ? scaleLabels : selector === '[data-mode]' ? modeButtons : []; }
   };
   const timers = new FakeTimers();
   const calls = [];
@@ -86,7 +87,7 @@ function harness(handler, options) {
     window, document, SpeedtestGauge, Promise, performance: { now: () => timers.now }, Date: FakeDate,
     setTimeout: timers.setTimeout.bind(timers), clearTimeout: timers.clearTimeout.bind(timers)
   });
-  return { app: window.SpeedtestWeb, calls, document, nodes, ready, timers };
+  return { app: window.SpeedtestWeb, calls, document, nodes, modeButtons, ready, timers };
 }
 
 function status(job, fields) {
@@ -108,6 +109,10 @@ function deferred() {
 
 function nodeText(node) {
   return [node.textContent].concat(node.children.map(nodeText)).filter(Boolean).join(' ');
+}
+
+function nodesWithClass(node, className) {
+  return [node].concat(node.children.flatMap(child => nodesWithClass(child, className))).filter(child => (child.className || '').split(/\s+/).includes(className));
 }
 
 async function testLiveSamplesReachComplete() {
@@ -252,6 +257,21 @@ async function testRunModeUsesTermsServerLiveAndHistory() {
   assert.equal(h.app.state.results.internet.download_mbps, 80);
   assert.equal(h.app.state.history[0].id, 'history-row');
   assert.equal(h.calls.some(call => call.method === 'runTest'), false, 'router tests never use the legacy synchronous bridge');
+}
+
+async function testHistoryRefreshFailureDoesNotRewriteCompletedMeasurement() {
+  const h = harness(method => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'history-failure-job' });
+    if (method === 'live_status') return Promise.resolve(complete('history-failure-job', 144));
+    if (method === 'history') return Promise.reject(Object.assign(new Error('history unavailable'), { code: 'storage_error' }));
+    throw new Error('unexpected ' + method);
+  });
+  await h.app.runMode('router-internet');
+  assert.equal(h.app.state.status, 'done');
+  assert.equal(h.app.state.phase, 'complete');
+  assert.equal(h.app.state.results.internet.download_mbps, 144);
+  assert.equal(h.app.state.errorCode, null, 'best-effort history refresh is not a measurement error');
 }
 
 async function testTermsAcceptanceResumesLiveRun() {
@@ -743,7 +763,7 @@ async function testHistoryOutcomesConversionAndAnalytics() {
   h.app.state.history = [
     { id: 'ok', date: 'Today', kind: 'router-internet', outcome: 'success', download: { bandwidth: 12500000 }, upload: { bandwidth: 2500000 }, latency: 8 },
     { id: 'cancel', date: 'Today', kind: 'router-internet', outcome: 'cancelled' },
-    { id: 'failed', date: 'Today', kind: 'device-router', outcome: 'failed', error_code: 'local_io', download_mbps: 900 }
+    { id: 'failed', date: 'Today', kind: 'device-router', outcome: 'error', error_code: 'local_io', download_mbps: 900 }
   ];
   h.app.state.view = 'history'; h.app.render();
   const history = nodeText(h.nodes.view);
@@ -752,6 +772,10 @@ async function testHistoryOutcomesConversionAndAnalytics() {
   assert.match(history, /Cancelled/);
   assert.match(history, /Failed \(local_io\)/);
   assert.match(history, /900 Mbps/);
+  assert.equal(h.nodes.view.children[1].className, 'history-scroll');
+  assert.equal(h.nodes.view.children[1].attributes.role, 'region');
+  assert.equal(h.nodes.view.children[1].attributes.tabindex, '0');
+  assert.equal(nodesWithClass(h.nodes.view, 'failed').length, 1, 'backend error outcome uses failed styling');
   h.app.state.view = 'analytics'; h.app.render();
   const analytics = nodeText(h.nodes.view);
   assert.match(analytics, /Router → Internet: 1 recorded test/);
@@ -815,6 +839,61 @@ async function testPhaseAnnouncementsAreDistinctFromThrottledNumbers() {
   assert.equal(h.nodes['live-announcer'].textContent, 'upload 5 Mbps');
   await h.timers.tick(1);
   assert.equal(h.nodes['live-announcer'].textContent, 'upload 6 Mbps');
+}
+
+async function testTerminalStatesDiscardQueuedNumericAnnouncements() {
+  for (const terminal of ['done', 'error', 'cancelled']) {
+    const h = harness(() => Promise.resolve({ ok: true }));
+    Object.assign(h.app.state, { status: 'running', phase: 'download', gaugeValue: 88, gaugeUnit: 'Mbps', download: 88 });
+    h.app.render();
+    assert.ok(h.timers.tasks.length, 'running sample queues an announcement');
+    Object.assign(h.app.state, { status: terminal, phase: terminal === 'done' ? 'complete' : terminal,
+      errorPath: 'internet', errorCode: terminal === 'error' ? 'offline' : null, failedPhase: terminal === 'error' ? 'download' : null });
+    h.app.render();
+    const terminalAnnouncement = h.nodes['phase-announcer'].textContent;
+    await h.timers.tick(1500);
+    assert.equal(h.nodes['live-announcer'].textContent, '', terminal+' does not announce stale speed later');
+    assert.equal(h.nodes['phase-announcer'].textContent, terminalAnnouncement);
+  }
+}
+
+async function testModeSelectionIsLockedAndSemanticDuringActiveRun() {
+  const h = harness(() => Promise.resolve({ ok: true }));
+  h.ready(); await flush();
+  Object.assign(h.app.state, { mode: 'both', status: 'running', phase: 'download', results: {
+    local: { kind: 'device-router', download_mbps: 500, upload_mbps: 400, ping_ms: 2 }, internet: null
+  }});
+  h.app.render();
+  const internetButton = h.modeButtons[0], bothButton = h.modeButtons[2];
+  assert.equal(internetButton.disabled, true);
+  assert.equal(bothButton.disabled, true);
+  assert.equal(bothButton.attributes['aria-pressed'], 'true');
+  assert.equal(internetButton.attributes['aria-pressed'], 'false');
+  internetButton.click();
+  assert.equal(h.app.state.mode, 'both');
+  assert.match(h.nodes['route-label'].textContent, /Device → Router \+ Router → Internet/);
+  assert.equal(h.nodes.results.children.length, 1);
+  assert.match(nodeText(h.nodes.results.children[0]), /Device → Router/);
+  h.app.state.status = 'done'; h.app.state.phase = 'complete'; h.app.render();
+  assert.equal(internetButton.disabled, false);
+}
+
+async function testModeLocksWhileTermsSettingsArePending() {
+  const settings = deferred();
+  const h = harness(method => {
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    if (method === 'settings') return settings.promise;
+    throw new Error('unexpected '+method);
+  });
+  h.ready(); await flush();
+  const run = h.app.runMode('both');
+  assert.equal(h.modeButtons[0].disabled, true, 'mode locks before settings RPC resolves');
+  h.modeButtons[0].click();
+  assert.equal(h.app.state.mode, 'both');
+  settings.resolve({ ok: true, terms_accepted: false });
+  await run;
+  assert.equal(h.app.state.mode, 'both');
+  assert.equal(h.nodes['terms-dialog'].open, true);
 }
 
 async function testBothLocalFailureNeverStartsInternet() {
@@ -1051,6 +1130,7 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
     status('numeric-job', { phase: 'ping', progress: 0.5, ping_ms: NaN }),
     status('numeric-job', { phase: 'upload', progress: 0.5, upload_mbps: 2, upload_trace: [{ timestamp: 1, value: Infinity }] })
   ];
+  for (const jitter of ['1.2', -1, Infinity]) { const payload = complete('numeric-job', 10); payload.result.ping.jitter = jitter; malformed.push(payload); }
   for (const payload of malformed) {
     const responses = [{ ok: true, job_id: 'numeric-job' }, payload];
     const h = harness(() => Promise.resolve(responses.shift()));
@@ -1072,6 +1152,7 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testMalformedBackendStateIsStableError();
   await testRunningStartingPhaseNormalizesBeforeProgress();
   await testRunModeUsesTermsServerLiveAndHistory();
+  await testHistoryRefreshFailureDoesNotRewriteCompletedMeasurement();
   await testTermsAcceptanceResumesLiveRun();
   await testDeviceRouterKeepsLocalBridge();
   await testCancelDuringLocalStopsAfterInflightBatch();
@@ -1093,6 +1174,9 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testErrorRetryUsesFailedModeAndConsumesUiRejections();
   await testTermsAcceptanceRejectionBecomesRecoverableError();
   await testPhaseAnnouncementsAreDistinctFromThrottledNumbers();
+  await testTerminalStatesDiscardQueuedNumericAnnouncements();
+  await testModeSelectionIsLockedAndSemanticDuringActiveRun();
+  await testModeLocksWhileTermsSettingsArePending();
   await testBothLocalFailureNeverStartsInternet();
   await testRunModeHandlesBackendTerminalStates();
   await testCancelWinsAgainstInflightStatus();

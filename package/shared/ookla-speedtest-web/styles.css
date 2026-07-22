@@ -112,6 +112,9 @@ nav button:hover, .server button:hover { color: var(--cyan); }
 .outcome.cancelled { color: #d2dae0; }
 .outcome.failed { color: #ffb4b4; }
 #view { margin-top: 20px; }
+.history-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+.history-scroll:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+.history-scroll table { min-width: 680px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; }
 #server-panel { width: min(100%, 500px); margin: 20px auto; padding: 16px; border-radius: 12px; background: var(--navy-raised); }
