@@ -18,7 +18,7 @@ class FakeNode {
     this.value = '';
   }
   addEventListener(name, fn) { this.listeners[name] = fn; }
-  click() { if (this.listeners.click) return this.listeners.click.call(this); }
+  click() { if (!this.disabled && this.listeners.click) return this.listeners.click.call(this); }
   appendChild(node) { this.children.push(node); return node; }
   removeChild(node) { this.children.splice(this.children.indexOf(node), 1); }
   get firstChild() { return this.children[0] || null; }
@@ -200,6 +200,7 @@ async function testCancelIsImmediateAndSingleShot() {
   h.app.state.activeJob = 'cancel-job';
   h.app.state.status = 'running';
   h.app.state.failedPhase = 'download';
+  h.app.render();
   h.nodes['cancel-test'].click();
   h.nodes['cancel-test'].click();
   await flush();
@@ -880,20 +881,45 @@ async function testModeSelectionIsLockedAndSemanticDuringActiveRun() {
 
 async function testModeLocksWhileTermsSettingsArePending() {
   const settings = deferred();
+  let starts = 0;
   const h = harness(method => {
     if (method === 'history') return Promise.resolve({ ok: true, items: [] });
     if (method === 'settings') return settings.promise;
+    if (method === 'start_live') { starts++; return Promise.resolve({ ok: true, job_id: 'prepared-job' }); }
+    if (method === 'live_status') return Promise.resolve(complete('prepared-job', 90));
     throw new Error('unexpected '+method);
   });
   h.ready(); await flush();
-  const run = h.app.runMode('both');
+  const run = h.app.runMode('router-internet');
+  assert.equal(h.app.state.status, 'preparing');
+  assert.equal(h.nodes.status.textContent, 'Preparing…');
   assert.equal(h.modeButtons[0].disabled, true, 'mode locks before settings RPC resolves');
-  h.modeButtons[0].click();
-  assert.equal(h.app.state.mode, 'both');
-  settings.resolve({ ok: true, terms_accepted: false });
+  assert.equal(h.nodes['cancel-test'].hidden, true);
+  assert.equal(h.nodes['cancel-test'].disabled, true);
+  assert.equal(h.nodes['live-announcer'].textContent, '', 'preflight has no numeric speed announcement');
+  h.modeButtons[1].click();
+  assert.equal(h.app.state.mode, 'router-internet');
+  settings.resolve({ ok: true, terms_accepted: true });
   await run;
-  assert.equal(h.app.state.mode, 'both');
-  assert.equal(h.nodes['terms-dialog'].open, true);
+  assert.equal(starts, 1);
+  assert.equal(h.app.state.status, 'done');
+
+  const rejectedSettings = deferred();
+  const rejected = harness(method => {
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    if (method === 'settings') return rejectedSettings.promise;
+    throw new Error('unexpected '+method);
+  });
+  rejected.ready(); await flush();
+  const failedRun = rejected.app.runMode('router-internet').then(() => null, error => error);
+  assert.equal(rejected.app.state.status, 'preparing');
+  rejectedSettings.reject(Object.assign(new Error('offline'), { code: 'offline' }));
+  const error = await failedRun;
+  assert.equal(error.code, 'offline');
+  assert.equal(rejected.app.state.status, 'error');
+  assert.equal(rejected.modeButtons[0].disabled, false, 'settings failure unlocks modes');
+  assert.equal(rejected.nodes['cancel-test'].hidden, true);
+  assert.equal(rejected.nodes['cancel-test'].disabled, true);
 }
 
 async function testBothLocalFailureNeverStartsInternet() {

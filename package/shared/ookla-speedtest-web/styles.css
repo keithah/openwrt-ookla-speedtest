@@ -63,7 +63,9 @@ nav button:hover, .server button:hover { color: var(--cyan); }
 .gauge[data-phase="upload"] { --phase-color: var(--violet); }
 .gauge[data-phase="idle"], .gauge[data-phase="complete"] { --phase-color: #b7c2ca; }
 .gauge[data-status="idle"], .gauge[data-status="done"] { width: 230px; max-width: 230px; height: 230px; margin: 26px auto 20px; }
+.gauge[data-status="preparing"] { width: 230px; max-width: 230px; height: 230px; margin: 26px auto 20px; }
 @supports (aspect-ratio: 1) { .gauge[data-status="idle"], .gauge[data-status="done"] { height: auto; aspect-ratio: 1; } }
+@supports (aspect-ratio: 1) { .gauge[data-status="preparing"] { height: auto; aspect-ratio: 1; } }
 .gauge[data-status="idle"] .gauge-dial, .gauge[data-status="done"] .gauge-dial { opacity: 0; }
 .gauge[data-status="idle"] .gauge-progress, .gauge[data-status="idle"] .gauge-needle, .gauge[data-status="idle"] .gauge-readout,
 .gauge[data-status="done"] .gauge-progress, .gauge[data-status="done"] .gauge-needle, .gauge[data-status="done"] .gauge-readout { opacity: 0; }

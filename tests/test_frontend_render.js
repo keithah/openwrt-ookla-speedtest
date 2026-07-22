@@ -54,6 +54,14 @@ assert.equal(nodes['primary-metrics'].hidden, true, 'idle hides throughput metri
 assert.equal(latency.hidden, true, 'idle hides latency metrics');
 assert.equal(nodes['phase-label'].textContent, 'Ready');
 
+Object.assign(app.state, { status: 'preparing', phase: 'preparing' });
+app.render();
+assert.equal(nodes['gauge-dial'].hidden, true);
+assert.equal(nodes['go-control'].hidden, true);
+assert.equal(nodes['cancel-test'].hidden, true);
+assert.equal(nodes['live-gauge'].attributes['aria-busy'], 'true');
+assert.equal(nodes.status.textContent, 'Preparing…');
+
 Object.assign(app.state, {
   status: 'running', phase: 'download', progress: 25, gaugeValue: 50, gaugeUnit: 'Mbps', gaugeScale: 200,
   download: 50.25, upload: null, ping: 8.4, jitter: 1.2, loss: 0,
