@@ -7,7 +7,7 @@ methods={
  'cancel_live':{'job_id':''}, 'history':{},
  'delete_history':{'id':''}, 'clear_history':{}, 'settings':{},
  'accept_terms':{}, 'begin_local':{}, 'cancel_local':{'run_id':''},
- 'local_download':{'bytes':0}, 'local_upload':{'data':''},
+ 'local_download':{'run_id':'','bytes':0}, 'local_upload':{'run_id':'','data':''},
  'record_local':{'run_id':'','download_mbps':'','upload_mbps':'','ping_ms':''}
 }
 if len(sys.argv)>1 and sys.argv[1]=='list':

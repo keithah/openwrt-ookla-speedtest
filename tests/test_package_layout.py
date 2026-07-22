@@ -203,6 +203,8 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertEqual(methods["cancel_live"], {"job_id": ""})
         self.assertEqual(methods["begin_local"], {})
         self.assertEqual(methods["cancel_local"], {"run_id": ""})
+        self.assertEqual(methods["local_download"], {"run_id": "", "bytes": 0})
+        self.assertEqual(methods["local_upload"], {"run_id": "", "data": ""})
         self.assertEqual(methods["record_local"], {"run_id": "", "download_mbps": "", "upload_mbps": "", "ping_ms": ""})
 
 

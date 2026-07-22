@@ -38,6 +38,8 @@ assert.match(ljs,/live_status\s*:\s*\[\s*['"]job_id['"]\s*\]/);
 assert.match(ljs,/cancel_live\s*:\s*\[\s*['"]job_id['"]\s*\]/);
 assert.match(ljs,/begin_local\s*:\s*\[\s*\]/);
 assert.match(ljs,/cancel_local\s*:\s*\[\s*['"]run_id['"]\s*\]/);
+assert.match(ljs,/local_download\s*:\s*\[\s*['"]run_id['"]\s*,\s*['"]bytes['"]\s*\]/);
+assert.match(ljs,/local_upload\s*:\s*\[\s*['"]run_id['"]\s*,\s*['"]data['"]\s*\]/);
 assert.match(ljs,/record_local\s*:\s*\[\s*['"]run_id['"]\s*,\s*['"]download_mbps['"]\s*,\s*['"]upload_mbps['"]\s*,\s*['"]ping_ms['"]\s*\]/);
 const lrpc=fs.readFileSync(path.join(luci,'usr/libexec/rpcd/ookla-speedtest-web'),'utf8'); assert.match(lrpc,/list|call/); assert.match(lrpc,/OOKLA_SPEEDTEST_BIN/); assert.doesNotMatch(lrpc,/\$\(.*\)|`/);
 const gr=fs.readFileSync(path.join(gl,'usr/lib/oui-httpd/rpc/ookla-speedtest-web'),'utf8');

@@ -724,11 +724,13 @@ class LocalRunLifecycleTests(unittest.TestCase):
         self.run_dir.mkdir(parents=True)
         self.etc_dir.mkdir(parents=True)
         self.history = self.etc_dir / "history.jsonl"
+        (self.etc_dir / "terms-accepted").write_text("accepted\n")
         self.environment = dict(
             os.environ,
             OOKLA_WEBD_RUN_DIR=str(self.run_dir),
             OOKLA_WEBD_HISTORY=str(self.history),
             OOKLA_HISTORY_RETENTION="2",
+            OOKLA_LOCAL_RUN_LEASE="15",
             OOKLA_LOCAL_RUN_TTL="600",
         )
 
@@ -746,6 +748,16 @@ class LocalRunLifecycleTests(unittest.TestCase):
             check=True,
         )
         return json.loads(process.stdout)
+
+    def load_service(self, name):
+        with mock.patch.dict(os.environ, self.environment), mock.patch(
+            "sys.argv", [str(SERVICE)]
+        ):
+            loader = importlib.machinery.SourceFileLoader(name, str(SERVICE))
+            spec = importlib.util.spec_from_loader(loader.name, loader)
+            module = importlib.util.module_from_spec(spec)
+            loader.exec_module(module)
+            return module
 
     def history_rows(self):
         if not self.history.exists():
@@ -780,6 +792,71 @@ class LocalRunLifecycleTests(unittest.TestCase):
         self.assertEqual(recorded["error"]["code"], "local_cancelled")
         self.assertEqual(self.history_rows(), original)
 
+    def test_fresh_local_run_blocks_other_measurement_starts(self):
+        run_id = self.rpc("begin_local")["run_id"]
+
+        self.assertEqual(self.rpc("begin_local")["error"]["code"], "busy")
+        self.assertEqual(self.rpc("start_live")["error"]["code"], "busy")
+        self.assertEqual(self.rpc("start")["error"]["code"], "busy")
+        self.assertEqual(
+            self.rpc("local_download", run_id=run_id, bytes=1024)["bytes"], 1024
+        )
+
+    def test_two_simultaneous_local_begins_reserve_only_one_run(self):
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(lambda _: self.rpc("begin_local"), range(2)))
+
+        self.assertEqual(sum(response.get("ok") is True for response in responses), 1)
+        self.assertEqual(
+            sum(response.get("error", {}).get("code") == "busy" for response in responses),
+            1,
+        )
+
+    def test_active_live_job_blocks_local_begin(self):
+        jobs = self.run_dir / "jobs"
+        jobs.mkdir(exist_ok=True)
+        job_id = "c" * 32
+        (jobs / f"{job_id}.json").write_text(
+            json.dumps({"job_id": job_id, "state": "running", "pid": os.getpid()})
+        )
+
+        self.assertEqual(self.rpc("begin_local")["error"]["code"], "busy")
+
+    def test_transfer_heartbeat_renews_active_lease(self):
+        run_id = self.rpc("begin_local")["run_id"]
+        marker = self.run_dir / "local-jobs" / f"{run_id}.json"
+        row = json.loads(marker.read_text())
+        row["updated"] = int(time.time()) - 14
+        marker.write_text(json.dumps(row))
+
+        downloaded = self.rpc("local_download", run_id=run_id, bytes=1024)
+        renewed = json.loads(marker.read_text())
+
+        self.assertTrue(downloaded["ok"])
+        self.assertGreater(renewed["updated"], row["updated"])
+
+    def test_abandoned_local_lease_expires_and_releases_measurements(self):
+        run_id = self.rpc("begin_local")["run_id"]
+        marker = self.run_dir / "local-jobs" / f"{run_id}.json"
+        row = json.loads(marker.read_text())
+        row["updated"] = int(time.time()) - 16
+        marker.write_text(json.dumps(row))
+
+        replacement = self.rpc("begin_local")
+
+        self.assertTrue(replacement["ok"])
+        self.assertNotEqual(replacement["run_id"], run_id)
+        self.assertFalse(marker.exists())
+
+    def test_local_transfers_reject_cross_client_and_expired_runs(self):
+        run_id = self.rpc("begin_local")["run_id"]
+        invalid = self.rpc("local_upload", run_id="../bad", data="1234")
+        other = self.rpc("local_download", run_id="d" * 32, bytes=1024)
+
+        self.assertEqual(invalid["error"]["code"], "invalid_local_run_id")
+        self.assertEqual(other["error"]["code"], "local_run_not_found")
+        self.assertTrue(self.rpc("cancel_local", run_id=run_id)["ok"])
+
     def test_record_before_cancel_commits_once_and_cancel_is_too_late(self):
         self.prefill_full_history()
         run_id = self.rpc("begin_local")["run_id"]
@@ -796,6 +873,34 @@ class LocalRunLifecycleTests(unittest.TestCase):
         rows = self.history_rows()
         self.assertEqual(len(rows), 2)
         self.assertEqual([row["id"] for row in rows].count(run_id), 1)
+
+    def test_history_commit_repairs_active_marker_after_power_loss(self):
+        service = self.load_service("ookla_local_power_loss")
+        run_id = service.main({"method": "begin_local"})["run_id"]
+        original_write = service.writelocaljob
+
+        def fail_committed(target_id, row):
+            if target_id == run_id and row.get("state") == "committed":
+                raise OSError("simulated power loss")
+            return original_write(target_id, row)
+
+        with mock.patch.object(service, "writelocaljob", side_effect=fail_committed):
+            failed = service.main(
+                dict(self.local_values(run_id), method="record_local")
+            )
+
+        self.assertEqual(failed["error"]["code"], "storage_error")
+        self.assertEqual(service.readlocaljob(run_id)["state"], "active")
+        self.assertEqual(service.readhist()[0]["run_id"], run_id)
+
+        cancelled = service.main({"method": "cancel_local", "run_id": run_id})
+        replayed = service.main(dict(self.local_values(run_id), method="record_local"))
+
+        self.assertEqual(cancelled["error"]["code"], "too_late")
+        self.assertEqual(cancelled["state"], "committed")
+        self.assertEqual(replayed["state"], "committed")
+        self.assertEqual(service.readlocaljob(run_id)["state"], "committed")
+        self.assertEqual([row["run_id"] for row in service.readhist()], [run_id])
 
     def test_concurrent_cancel_and_record_have_one_atomic_winner(self):
         original = self.prefill_full_history()

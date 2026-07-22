@@ -132,6 +132,11 @@ def local_run_ttl():
   value=int(os.environ.get('OOKLA_LOCAL_RUN_TTL','600'))
   return value if value>=0 else 600
  except Exception: return 600
+def local_run_lease():
+ try:
+  value=int(os.environ.get('OOKLA_LOCAL_RUN_LEASE','15'))
+  return value if value>0 else 15
+ except Exception: return 15
 def acquire_local_lock():
  deadline=time.monotonic()+2
  while time.monotonic()<deadline:
@@ -144,20 +149,60 @@ def readlocaljob(run_id):
   with open(localjobfile(run_id)) as f: return json.load(f)
  except Exception: return None
 def writelocaljob(run_id,state): atomic_write(localjobfile(run_id),json.dumps(state,separators=(',',':')))
+def local_history_item(run_id):
+ for item in reversed(readhist()):
+  if item.get('run_id')==run_id: return item
+ return None
+def reconcile_local_commit(run_id,row=None):
+ item=local_history_item(run_id)
+ if item is None: return None
+ now=int(time.time()); repaired=dict(row or {'run_id':run_id,'started':item.get('timestamp',now)})
+ repaired.update({'state':'committed','updated':now,'item':item}); writelocaljob(run_id,repaired)
+ return item
 def cleanup_local_runs():
- now=time.time(); ttl=local_run_ttl()
+ now=time.time(); ttl=local_run_ttl(); lease=local_run_lease()
  try: names=os.listdir(localjobsdir)
  except OSError: names=[]
  for name in names:
   if not re.fullmatch(r'[0-9a-f]{32}\.json',name): continue
   path=os.path.join(localjobsdir,name)
   try:
+   row=None
    try:
     with open(path) as f: row=json.load(f)
     updated=float(row.get('updated',os.path.getmtime(path)))
    except Exception: updated=os.path.getmtime(path)
-   if now-updated>ttl: os.unlink(path)
+   limit=lease if isinstance(row,dict) and row.get('state')=='active' else ttl
+   if now-updated>limit: os.unlink(path)
   except Exception: pass
+def active_local_run():
+ try: names=os.listdir(localjobsdir)
+ except OSError: return None
+ for name in names:
+  if not re.fullmatch(r'[0-9a-f]{32}\.json',name): continue
+  row=readlocaljob(name[:-5])
+  if row and row.get('state')=='active': return row
+ return None
+def active_live_run():
+ try: names=os.listdir(jobsdir)
+ except OSError: return None
+ for name in names:
+  if not re.fullmatch(r'[0-9a-f]{32}\.json',name): continue
+  row=readjob(name[:-5])
+  if row and row.get('state') in ('starting','running'): return row
+ return None
+def heartbeat_local_run(run_id):
+ if not valid_job_id(run_id): return {'ok':False,'error':{'code':'invalid_local_run_id'}}
+ lk=acquire_local_lock()
+ if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
+ if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
+ try:
+  cleanup_local_runs(); row=readlocaljob(run_id)
+  if row is None: return {'ok':False,'error':{'code':'local_run_not_found'}}
+  if row.get('state')!='active': return {'ok':False,'error':{'code':'local_run_not_active'}}
+  row['updated']=int(time.time()); writelocaljob(run_id,row); return {'ok':True}
+ except Exception: return {'ok':False,'error':{'code':'storage_error'}}
+ finally: unlock(lk)
 def stop_spawned_worker(child,job_id):
  deadline=time.monotonic()+.5; group_verified=False
  while child.poll() is None and time.monotonic()<deadline:
@@ -234,7 +279,7 @@ def verified_worker_pid(pid,job_id):
  except Exception: return False
 def main(req):
  m=req.get('method','')
- if m in ('start_live','live_status','cancel_live'): cleanup_live_jobs()
+ if m in ('start_live','live_status','cancel_live','begin_local'): cleanup_live_jobs()
  if m=='live_status':
   jid=req.get('job_id')
   if not valid_job_id(jid): return {'ok':False,'error':{'code':'invalid_job_id'}}
@@ -289,6 +334,8 @@ def main(req):
   if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
   jid=new_id(); marked=False; markerpath=startingfile(jid); child=None
   try:
+   cleanup_local_runs()
+   if active_local_run(): return {'ok':False,'error':{'code':'busy'}}
    try:
     fd=os.open(markerpath,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
     with os.fdopen(fd,'w') as f: json.dump({'job_id':jid,'purpose':'starting'},f)
@@ -332,7 +379,9 @@ def main(req):
   if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
   if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
   try:
-   cleanup_local_runs(); run_id=new_id(); now=int(time.time())
+   cleanup_local_runs()
+   if active_local_run() or active_live_run(): return {'ok':False,'error':{'code':'busy'}}
+   run_id=new_id(); now=int(time.time())
    writelocaljob(run_id,{'run_id':run_id,'state':'active','started':now,'updated':now})
    return {'ok':True,'run_id':run_id,'state':'active'}
   except Exception: return {'ok':False,'error':{'code':'storage_error'}}
@@ -344,7 +393,8 @@ def main(req):
   if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
   if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
   try:
-   cleanup_local_runs(); row=readlocaljob(run_id)
+   cleanup_local_runs(); row=readlocaljob(run_id); committed=reconcile_local_commit(run_id,row)
+   if committed is not None: return {'ok':False,'state':'committed','error':{'code':'too_late'}}
    if row is None: return {'ok':False,'error':{'code':'local_run_not_found'}}
    if row.get('state')=='committed': return {'ok':False,'state':'committed','error':{'code':'too_late'}}
    if row.get('state')=='cancelled': return {'ok':True,'run_id':run_id,'state':'cancelled'}
@@ -354,11 +404,15 @@ def main(req):
   except Exception: return {'ok':False,'error':{'code':'storage_error'}}
   finally: unlock(lk)
  if m=='local_download':
+  heartbeat=heartbeat_local_run(req.get('run_id'))
+  if not heartbeat.get('ok'): return heartbeat
   try: size=int(req.get('bytes',131072))
   except Exception: size=0
   if size<1024 or size>262144: return {'ok':False,'error':{'code':'invalid_transfer_size'}}
   return {'ok':True,'bytes':size,'data':'0'*size}
  if m=='local_upload':
+  heartbeat=heartbeat_local_run(req.get('run_id'))
+  if not heartbeat.get('ok'): return heartbeat
   data=req.get('data')
   if not isinstance(data,str) or len(data)<1 or len(data)>262144: return {'ok':False,'error':{'code':'invalid_transfer_size'}}
   return {'ok':True,'bytes':len(data)}
@@ -379,12 +433,13 @@ def main(req):
   if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
   if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
   try:
-   cleanup_local_runs(); row=readlocaljob(run_id)
+   cleanup_local_runs(); row=readlocaljob(run_id); committed=reconcile_local_commit(run_id,row)
+   if committed is not None: return {'ok':True,'run_id':run_id,'state':'committed','item':committed}
    if row is None: return {'ok':False,'error':{'code':'local_run_not_found'}}
-   if row.get('state')=='cancelled': return {'ok':False,'state':'cancelled','error':{'code':'local_cancelled'}}
    if row.get('state')=='committed': return {'ok':True,'run_id':run_id,'state':'committed','item':row.get('item')}
+   if row.get('state')=='cancelled': return {'ok':False,'state':'cancelled','error':{'code':'local_cancelled'}}
    if row.get('state')!='active': return {'ok':False,'error':{'code':'invalid_local_state'}}
-   rec=dict({'id':run_id,'timestamp':int(time.time()),'kind':'device-router','outcome':'success'},**values)
+   rec=dict({'id':run_id,'run_id':run_id,'timestamp':int(time.time()),'kind':'device-router','outcome':'success'},**values)
    n=retention(); items=[item for item in readhist() if item.get('id')!=run_id]+[rec]
    writehist(items if n==0 else items[-n:])
    row.update({'state':'committed','updated':int(time.time()),'item':rec}); writelocaljob(run_id,row)
@@ -414,6 +469,8 @@ def main(req):
  if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
  if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
  try:
+  cleanup_local_runs()
+  if active_local_run(): return {'ok':False,'error':{'code':'busy'}}
   writestate({'state':'running','started':int(time.time())})
   cmd=[binary,'--accept-license','--format=json']
   if sid is not None: cmd += ['--server-id',str(int(sid))]
