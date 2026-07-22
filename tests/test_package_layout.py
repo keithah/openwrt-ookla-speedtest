@@ -146,6 +146,23 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertRegex(readme, r"(?i)GoodCloud.*Remote Web Access")
         self.assertIn("make package/openwrt-ookla-speedtest/compile V=s", readme)
 
+    def test_shared_frontend_assets_are_keyed_to_package_version(self):
+        makefile = (PACKAGE / "Makefile").read_text()
+        version_match = re.search(r"(?m)^PKG_VERSION:=(\S+)$", makefile)
+        self.assertIsNotNone(version_match)
+        version = version_match.group(1)
+        html = (PACKAGE / "shared/ookla-speedtest-web/index.html").read_text()
+        for asset, attribute in (
+            ("styles.css", "href"),
+            ("gauge.js", "src"),
+            ("app.js", "src"),
+        ):
+            with self.subTest(asset=asset):
+                self.assertRegex(
+                    html,
+                    rf'{attribute}=["\']{re.escape(asset)}\?v={re.escape(version)}["\']',
+                )
+
     def test_ci_and_release_workflow_contracts(self):
         workflows = ROOT / ".github" / "workflows"
         test_workflow = (workflows / "test.yml").read_text()

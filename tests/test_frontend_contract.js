@@ -2,7 +2,9 @@ const fs=require('fs');const path=require('path');const assert=require('assert')
 const root=path.join(__dirname,'..','package','shared','ookla-speedtest-web');
 for(const f of ['index.html','gauge.js','app.js','styles.css']) assert.ok(fs.existsSync(path.join(root,f)),`missing ${f}`);
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8'); const js=fs.readFileSync(path.join(root,'app.js'),'utf8'); const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');
-assert.match(html,/<script src=["']gauge\.js["']><\/script>\s*<script src=["']app\.js["']><\/script>/);
+const makefile=fs.readFileSync(path.join(__dirname,'..','package','Makefile'),'utf8');const version=makefile.match(/^PKG_VERSION:=(\S+)$/m)[1];const escapedVersion=version.replaceAll('.','\\.');
+for(const [asset,attribute] of [['styles.css','href'],['gauge.js','src'],['app.js','src']]) assert.match(html,new RegExp(`${attribute}=["']${asset.replaceAll('.','\\.')}\\?v=${escapedVersion}["']`));
+assert.match(html,new RegExp(`<script src=["']gauge\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']app\\.js\\?v=${escapedVersion}["']><\\/script>`));
 assert.match(html,/id=["']go-control["']/); assert.match(html,/History/); assert.match(html,/Analytics/); assert.match(html,/Settings/); assert.match(html,/About/);
 for(const id of ['live-gauge','gauge-needle','gauge-value','gauge-unit','phase-label','metric-download','metric-upload','metric-ping','metric-jitter','metric-loss','download-trace','upload-trace','cancel-test']) assert.match(html,new RegExp(`id=["']${id}["']`),`missing semantic gauge node #${id}`);
 for(const id of ['phase-announcer','error-message','retry-test']) assert.match(html,new RegExp(`id=["']${id}["']`),`missing recovery/accessibility node #${id}`);
@@ -41,6 +43,7 @@ const luci=path.join(__dirname,'..','package','luci-app-ookla-speedtest-web'); c
 for(const f of ['usr/share/luci/menu.d/luci-app-ookla-speedtest-web.json','www/luci-static/resources/view/ookla-speedtest-web/main.js','usr/libexec/rpcd/ookla-speedtest-web']) assert.ok(fs.existsSync(path.join(luci,f)),`missing ${f}`);
 for(const f of ['CONTROL/control','CONTROL/postinst','usr/share/oui/menu.d/ookla-speedtest-web.json','usr/lib/oui-httpd/rpc/ookla-speedtest-web','www/views/gl-sdk4-ui-ookla-speedtest-web.common.js']) assert.ok(fs.existsSync(path.join(gl,f)),`missing ${f}`);
 const ljs=fs.readFileSync(path.join(luci,'www/luci-static/resources/view/ookla-speedtest-web/main.js'),'utf8'); assert.match(ljs,/view\.extend/); assert.match(ljs,/rpc\.declare/); assert.match(ljs,/csrf|session|authenticated/i); assert.doesNotMatch(ljs,/https?:\/\//);
+assert.match(ljs,/frame\.src\s*=\s*L\.resource\(['"]ookla-speedtest-web\/index\.html['"]\)/);
 assert.match(ljs,/window\.SpeedtestWebAdapter/);
 assert.match(ljs,/start_live\s*:\s*\[\s*['"]server_id['"]\s*\]/);
 assert.match(ljs,/live_status\s*:\s*\[\s*['"]job_id['"]\s*\]/);
@@ -71,4 +74,5 @@ assert.doesNotMatch(gr,/listen|port|password|credential/i);
 const gm=JSON.parse(fs.readFileSync(path.join(gl,'usr/share/oui/menu.d/ookla-speedtest-web.json'),'utf8'));
 assert.strictEqual(gm.parent,'applications'); assert.strictEqual(gm.level,2); assert.strictEqual(gm.view,'ookla-speedtest-web'); assert.strictEqual(gm.title,'Ookla Speedtest');
 const gv=fs.readFileSync(path.join(gl,'www/views/gl-sdk4-ui-ookla-speedtest-web.common.js'),'utf8'); assert.match(gv,/window\.SpeedtestWebAdapter/); assert.match(gv,/module\.exports/); assert.match(gv,/window\.\$request/); assert.match(gv,/srcdoc/); assert.match(gv,/<base href=/); assert.doesNotMatch(gv,/sysauth/); assert.doesNotMatch(gv,/\.src\s*=\s*['"]\/luci-static/);
+const glSrcdoc=html.replace('<head>','<head><base href="/luci-static/resources/ookla-speedtest-web/">');for(const asset of ['styles.css','gauge.js','app.js']) assert.ok(glSrcdoc.includes(`${asset}?v=${version}`),`GL srcdoc must preserve ${asset} cache key`);
 console.log('frontend contract ok');
