@@ -9,21 +9,65 @@
 <body>
 <main id="app">
   <header><div class="brand">SPEEDTEST <small>UNOFFICIAL</small></div><nav aria-label="Primary"><button data-view="history">History</button><button data-view="analytics">Analytics</button><button data-view="settings">Settings</button><button data-view="about">About</button></nav></header>
-  <section class="hero">
+  <section class="hero test-stage" id="test-stage">
     <div class="mode-picker" role="group" aria-label="Test mode">
       <button class="active" data-mode="router-internet">Router → Internet</button>
       <button data-mode="device-router">Device → Router</button>
       <button data-mode="both">Both</button>
     </div>
-    <div class="route" id="route-label">ROUTER › INTERNET</div>
-    <button id="go-control" aria-label="Start selected speed tests" class="go">GO</button>
+    <div class="route" id="route-label">Router → Internet</div>
+    <div class="primary-metrics" id="primary-metrics">
+      <div class="primary-metric download-metric">
+        <span class="metric-heading"><i aria-hidden="true">↓</i> Download</span>
+        <strong id="metric-download">—</strong><small>Mbps</small>
+        <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path id="download-trace"></path></svg>
+      </div>
+      <div class="primary-metric upload-metric">
+        <span class="metric-heading"><i aria-hidden="true">↑</i> Upload</span>
+        <strong id="metric-upload">—</strong><small>Mbps</small>
+        <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path id="upload-trace"></path></svg>
+      </div>
+    </div>
+    <div class="latency-strip" aria-label="Connection responsiveness">
+      <div><span>Ping</span><strong id="metric-ping">—</strong><small>ms</small></div>
+      <div><span>Jitter</span><strong id="metric-jitter">—</strong><small>ms</small></div>
+      <div><span>Loss</span><strong id="metric-loss">—</strong><small>%</small></div>
+    </div>
+    <div id="live-gauge" class="gauge" data-phase="idle" data-status="idle">
+      <svg class="gauge-dial" viewBox="0 0 460 390" role="img" aria-labelledby="phase-label gauge-value gauge-unit">
+        <path class="gauge-track" d="M107 353 A174 174 0 1 1 353 353"></path>
+        <path class="gauge-progress" d="M107 353 A174 174 0 1 1 353 353" pathLength="100"></path>
+        <g class="gauge-ticks" aria-hidden="true">
+          <path d="M111 339l13-9 M92 257l16-2 M111 174l15 8 M170 114l8 15 M254 93l-2 16 M335 118l-9 13 M386 184l-15 7 M395 270l-16-3 M349 341l-13-10"></path>
+          <text x="105" y="372" data-gauge-scale="0">0</text>
+          <text x="78" y="270" data-gauge-scale="1">25</text>
+          <text x="140" y="137" data-gauge-scale="2">50</text>
+          <text x="310" y="137" data-gauge-scale="3">75</text>
+          <text x="348" y="372" data-gauge-scale="4">100</text>
+        </g>
+        <g id="gauge-needle" class="gauge-needle" transform="rotate(-135 230 230)" aria-hidden="true">
+          <line x1="230" y1="230" x2="388" y2="230"></line>
+          <circle cx="230" cy="230" r="9"></circle>
+        </g>
+      </svg>
+      <div class="gauge-readout">
+        <span id="phase-label">Ready</span>
+        <strong id="gauge-value">0</strong>
+        <small id="gauge-unit">Mbps</small>
+      </div>
+      <div class="test-controls">
+        <button id="go-control" aria-label="Start selected speed tests" class="go">GO</button>
+        <button id="cancel-test" class="cancel" hidden>Cancel test</button>
+      </div>
+    </div>
     <p id="status">Ready to test your connection</p>
+    <p id="live-announcer" aria-live="polite" data-throttle-ms="1000" class="sr-only"></p>
     <p class="scope-note" id="scope-note">Tests the router's connection to the internet—not this device.</p>
-    <div class="meta"><span id="isp-badge">ISP</span><span id="network-badge">Connection</span></div>
+    <div class="connection-details"><div><small>PROVIDER</small><strong id="isp-badge">ISP</strong></div><div><small>CONNECTION</small><strong id="network-badge">Connection</strong></div></div>
     <p id="vpn-callout" class="vpn-callout" role="status"></p>
     <div class="server"><div><small>INTERNET TEST SERVER</small><strong id="server-name">Auto</strong><span id="server-detail">Select a server</span></div><button id="server-picker">Change</button></div>
+    <section id="results" class="results" aria-live="polite"></section>
   </section>
-  <section id="results" class="results" aria-live="polite"></section>
   <section id="view" aria-live="polite"></section>
   <div id="server-panel" hidden><input id="server-search" type="search" placeholder="Search servers" aria-label="Search servers"><div id="server-results" role="listbox" aria-label="Server results"></div></div>
 </main>

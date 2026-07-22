@@ -4,8 +4,16 @@ for(const f of ['index.html','gauge.js','app.js','styles.css']) assert.ok(fs.exi
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8'); const js=fs.readFileSync(path.join(root,'app.js'),'utf8'); const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');
 assert.match(html,/<script src=["']gauge\.js["']><\/script>\s*<script src=["']app\.js["']><\/script>/);
 assert.match(html,/id=["']go-control["']/); assert.match(html,/History/); assert.match(html,/Analytics/); assert.match(html,/Settings/); assert.match(html,/About/);
+for(const id of ['live-gauge','gauge-needle','gauge-value','gauge-unit','phase-label','metric-download','metric-upload','metric-ping','metric-jitter','metric-loss','download-trace','upload-trace','cancel-test']) assert.match(html,new RegExp(`id=["']${id}["']`),`missing semantic gauge node #${id}`);
+const stageStart=html.indexOf('id="test-stage"'),resultsStart=html.indexOf('id="results"'),stageEnd=html.indexOf('</section>',stageStart);assert.ok(stageStart>=0&&resultsStart>stageStart&&resultsStart<stageEnd,'results must belong to the test stage');
+assert.match(html,/id=["']live-announcer["'][^>]*aria-live=["']polite["'][^>]*data-throttle-ms=["']\d+["']/);
+assert.match(html,/Router\s*→\s*Internet/); assert.match(html,/Device\s*→\s*Router/);
 assert.match(js,/subscribe\s*\(/); assert.match(js,/navigate\s*\(/); assert.match(js,/call\s*\(/); assert.match(js,/textContent/); assert.doesNotMatch(js,/innerHTML/);
+assert.match(js,/function renderGauge\s*\(/); assert.match(js,/SpeedtestGauge\.angleFor/); assert.match(js,/SpeedtestGauge\.tracePath/);
+assert.match(js,/function announceGauge\s*\(/); assert.match(js,/setTimeout\s*\(/);
 assert.match(js,/router.*internet|internet.*router/i); assert.match(css,/@media/); assert.match(css,/#0?4|navy|cyan/i);
+assert.match(css,/--cyan\s*:/); assert.match(css,/--violet\s*:/); assert.match(css,/:focus-visible/); assert.match(css,/@media\s*\(prefers-reduced-motion:\s*reduce\)/); assert.match(css,/@media\s*\(max-width:\s*640px\)/); assert.match(css,/grid-template-columns:\s*1fr/);
+assert.match(css,/\.gauge\[data-status=["']idle["']\]\s+\.gauge-dial/);
 for(const mode of ['router-internet','device-router','both']) assert.match(html,new RegExp(`data-mode=["']${mode}["']`));
 assert.match(js,/local_download/); assert.match(js,/local_upload/); assert.match(js,/Promise\.all/);
 assert.match(js,/size=32768/); assert.doesNotMatch(js,/size=131072/);
