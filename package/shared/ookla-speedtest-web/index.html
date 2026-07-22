@@ -20,12 +20,12 @@
       <div class="primary-metric download-metric">
         <span class="metric-heading"><i aria-hidden="true">↓</i> Download</span>
         <strong id="metric-download">—</strong><small>Mbps</small>
-        <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path id="download-trace"></path></svg>
+        <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-labelledby="download-trace-label"><title id="download-trace-label">Download speed over time</title><path id="download-trace"></path></svg>
       </div>
       <div class="primary-metric upload-metric">
         <span class="metric-heading"><i aria-hidden="true">↑</i> Upload</span>
         <strong id="metric-upload">—</strong><small>Mbps</small>
-        <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path id="upload-trace"></path></svg>
+        <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-labelledby="upload-trace-label"><title id="upload-trace-label">Upload speed over time</title><path id="upload-trace"></path></svg>
       </div>
     </div>
     <div class="latency-strip" aria-label="Connection responsiveness" hidden>
@@ -33,7 +33,7 @@
       <div><span>Jitter</span><strong id="metric-jitter">—</strong><small>ms</small></div>
       <div><span>Loss</span><strong id="metric-loss">—</strong><small>%</small></div>
     </div>
-    <div id="live-gauge" class="gauge" data-phase="idle" data-status="idle">
+    <div id="live-gauge" class="gauge" data-phase="idle" data-status="idle" aria-busy="false" aria-describedby="status">
       <svg id="gauge-dial" class="gauge-dial" viewBox="0 0 460 390" role="img" aria-labelledby="phase-label gauge-value gauge-unit" hidden>
         <path class="gauge-track" d="M107 353 A174 174 0 1 1 353 353"></path>
         <path class="gauge-progress" d="M107 353 A174 174 0 1 1 353 353" pathLength="100"></path>
@@ -61,7 +61,12 @@
       </div>
     </div>
     <p id="status">Ready to test your connection</p>
+    <p id="phase-announcer" aria-live="polite" class="sr-only"></p>
     <p id="live-announcer" aria-live="polite" data-throttle-ms="1000" class="sr-only"></p>
+    <div class="error-recovery" role="alert" aria-atomic="true">
+      <p id="error-message" hidden></p>
+      <button id="retry-test" hidden>Retry</button>
+    </div>
     <p class="scope-note" id="scope-note">Tests the router's connection to the internet—not this device.</p>
     <div class="connection-details"><div><small>PROVIDER</small><strong id="isp-badge">ISP</strong></div><div><small>CONNECTION</small><strong id="network-badge">Connection</strong></div></div>
     <p id="vpn-callout" class="vpn-callout" role="status"></p>

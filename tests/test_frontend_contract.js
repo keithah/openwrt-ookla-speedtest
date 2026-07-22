@@ -5,6 +5,7 @@ const html=fs.readFileSync(path.join(root,'index.html'),'utf8'); const js=fs.rea
 assert.match(html,/<script src=["']gauge\.js["']><\/script>\s*<script src=["']app\.js["']><\/script>/);
 assert.match(html,/id=["']go-control["']/); assert.match(html,/History/); assert.match(html,/Analytics/); assert.match(html,/Settings/); assert.match(html,/About/);
 for(const id of ['live-gauge','gauge-needle','gauge-value','gauge-unit','phase-label','metric-download','metric-upload','metric-ping','metric-jitter','metric-loss','download-trace','upload-trace','cancel-test']) assert.match(html,new RegExp(`id=["']${id}["']`),`missing semantic gauge node #${id}`);
+for(const id of ['phase-announcer','error-message','retry-test']) assert.match(html,new RegExp(`id=["']${id}["']`),`missing recovery/accessibility node #${id}`);
 const stageStart=html.indexOf('id="test-stage"'),resultsStart=html.indexOf('id="results"'),stageEnd=html.indexOf('</section>',stageStart);assert.ok(stageStart>=0&&resultsStart>stageStart&&resultsStart<stageEnd,'results must belong to the test stage');
 const arc=html.match(/class="gauge-track" d="M([\d.]+) ([\d.]+) A[\d. ]+ ([\d.]+) ([\d.]+)"/);assert.ok(arc,'missing gauge arc geometry');
 const needle=html.match(/id="gauge-needle"[^>]*>[\s\S]*?<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/);assert.ok(needle,'missing gauge needle geometry');
@@ -13,6 +14,9 @@ function assertAligned(point,endX,endY,message){const cx=+needle[1],cy=+needle[2
 assertAligned(rotateNeedle(-135),+arc[1],+arc[2],'zero-speed needle must point at the lower-left dial endpoint');
 assertAligned(rotateNeedle(135),+arc[3],+arc[4],'max-speed needle must point at the lower-right dial endpoint');
 assert.match(html,/id=["']live-announcer["'][^>]*aria-live=["']polite["'][^>]*data-throttle-ms=["']\d+["']/);
+assert.match(html,/id=["']phase-announcer["'][^>]*aria-live=["']polite["']/);
+assert.match(html,/id=["']download-trace-label["']/);assert.match(html,/id=["']upload-trace-label["']/);
+assert.match(html,/id=["']retry-test["'][^>]*>Retry</);
 assert.match(html,/id=["']primary-metrics["'][^>]*hidden/);assert.match(html,/class=["']latency-strip["'][^>]*hidden/);
 assert.match(html,/id=["']gauge-dial["']/);assert.match(html,/id=["']gauge-readout["']/);
 assert.match(html,/Router\s*→\s*Internet/); assert.match(html,/Device\s*→\s*Router/);

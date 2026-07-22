@@ -49,7 +49,7 @@ nav button:hover, .server button:hover { color: var(--cyan); }
 .metric-trace { position: absolute; right: 24px; bottom: 4px; left: 24px; width: calc(100% - 48px); height: 29px; opacity: .42; }
 .metric-trace path { fill: none; stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 #download-trace { stroke: var(--cyan); }
-#upload-trace { stroke: var(--violet); }
+#upload-trace { stroke: var(--violet); stroke-dasharray: 2.5 1.5; }
 
 .latency-strip { display: grid; grid-template-columns: repeat(3, 1fr); width: min(100%, 430px); margin: 5px auto 0; color: var(--muted); }
 .latency-strip > div { display: flex; align-items: baseline; justify-content: center; gap: 5px; font-size: .7rem; }
@@ -87,6 +87,10 @@ nav button:hover, .server button:hover { color: var(--cyan); }
 .cancel { padding: 9px 18px; border: 1px solid #465765; border-radius: 999px; background: #0a1925; color: #c9d2d9; cursor: pointer; font-size: .78rem; }
 .cancel:hover { border-color: var(--phase-color); color: #fff; }
 #status { min-height: 1.2em; margin: 0; color: #c5d0d8; font-size: .86rem; }
+.error-recovery { min-height: 2.5rem; margin: 8px auto 0; }
+#error-message { margin: 0 0 10px; color: #ffb4b4; font-size: .84rem; }
+#retry-test { padding: 9px 20px; border: 1px solid #ff9b9b; border-radius: 999px; background: var(--navy-raised); color: var(--ink); cursor: pointer; }
+#retry-test:hover { background: #251b25; }
 .scope-note, .vpn-callout { color: var(--muted); font-size: .78rem; }
 .scope-note { margin: 7px auto 0; }
 
@@ -101,8 +105,12 @@ nav button:hover, .server button:hover { color: var(--cyan); }
 .results { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 10px 0 30px; }
 .result-card { padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--navy-raised); box-shadow: 0 14px 30px #00101b55; }
 .result-card h2 { margin-top: 0; color: var(--cyan); font-size: 1rem; }
+.result-card.internet h2 { color: var(--violet); }
 .result-card p { margin: .65rem 0; font-size: 1.35rem; }
-.result-card small { color: var(--muted); }
+.result-card small { display: block; margin-top: .38rem; color: var(--muted); }
+.outcome { font-weight: 650; }
+.outcome.cancelled { color: #d2dae0; }
+.outcome.failed { color: #ffb4b4; }
 #view { margin-top: 20px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; }

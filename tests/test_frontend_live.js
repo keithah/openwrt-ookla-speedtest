@@ -18,7 +18,7 @@ class FakeNode {
     this.value = '';
   }
   addEventListener(name, fn) { this.listeners[name] = fn; }
-  click() { if (this.listeners.click) this.listeners.click.call(this); }
+  click() { if (this.listeners.click) return this.listeners.click.call(this); }
   appendChild(node) { this.children.push(node); return node; }
   removeChild(node) { this.children.splice(this.children.indexOf(node), 1); }
   get firstChild() { return this.children[0] || null; }
@@ -63,7 +63,7 @@ function harness(handler, options) {
     'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
     'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
     'server-detail', 'results', 'view', 'terms-dialog', 'accept-terms', 'server-picker', 'server-panel',
-    'server-search', 'server-results'];
+    'server-search', 'server-results', 'phase-announcer', 'error-message', 'retry-test'];
   const nodes = Object.fromEntries(ids.map(id => [id, new FakeNode()]));
   nodes['live-announcer'].setAttribute('data-throttle-ms', '1000');
   const latency = new FakeNode();
@@ -104,6 +104,10 @@ function deferred() {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
+}
+
+function nodeText(node) {
+  return [node.textContent].concat(node.children.map(nodeText)).filter(Boolean).join(' ');
 }
 
 async function testLiveSamplesReachComplete() {
@@ -677,6 +681,109 @@ async function testBothFailureKeepsCompletedLocalAndIdentifiesInternet() {
   assert.equal(h.app.state.errorPath, 'internet');
   assert.equal(h.app.state.results.local.kind, 'device-router');
   assert.equal(h.app.state.results.internet, null);
+  assert.equal(h.nodes.results.children.length, 1, 'completed local result remains visible');
+  assert.match(nodeText(h.nodes.results.children[0]), /Device → Router/);
+}
+
+async function testCompletedResultsRenderPathMetadataAndModeScope() {
+  const h = harness(() => Promise.resolve({ ok: true }));
+  h.app.state.results = {
+    local: { kind: 'device-router', download_mbps: 810, upload_mbps: 700, ping_ms: 2 },
+    internet: { kind: 'router-internet', download_mbps: 320, upload_mbps: 42, ping_ms: 9, jitter_ms: 1.4, loss_percent: 0,
+      server: { name: 'West Coast', sponsor: 'Example Host', location: 'Portland' }, isp: 'Example ISP',
+      interface: { name: 'wan', isVpn: false }, network_context: { note: 'Direct connection', vpn: false } }
+  };
+  h.app.state.mode = 'both';
+  h.app.state.status = 'done';
+  h.app.state.phase = 'complete';
+  h.app.render();
+  assert.equal(h.nodes.results.children.length, 2);
+  assert.match(nodeText(h.nodes.results.children[0]), /Device → Router/);
+  const internet = nodeText(h.nodes.results.children[1]);
+  for (const expected of ['Router → Internet', 'Jitter 1.4 ms', 'Loss 0 %', 'West Coast', 'Example ISP', 'wan', 'Direct connection']) assert.match(internet, new RegExp(expected));
+  h.app.state.mode = 'device-router';
+  h.app.render();
+  assert.equal(h.nodes.results.children.length, 1);
+  assert.match(nodeText(h.nodes.results.children[0]), /Device → Router/);
+}
+
+async function testHistoryOutcomesConversionAndAnalytics() {
+  const h = harness(() => Promise.resolve({ ok: true }));
+  h.app.state.history = [
+    { id: 'ok', date: 'Today', kind: 'router-internet', outcome: 'success', download: { bandwidth: 12500000 }, upload: { bandwidth: 2500000 }, latency: 8 },
+    { id: 'cancel', date: 'Today', kind: 'router-internet', outcome: 'cancelled' },
+    { id: 'failed', date: 'Today', kind: 'device-router', outcome: 'failed', error_code: 'local_io', download_mbps: 900 }
+  ];
+  h.app.state.view = 'history'; h.app.render();
+  const history = nodeText(h.nodes.view);
+  assert.match(history, /100 Mbps/);
+  assert.match(history, /20 Mbps/);
+  assert.match(history, /Cancelled/);
+  assert.match(history, /Failed \(local_io\)/);
+  assert.match(history, /900 Mbps/);
+  h.app.state.view = 'analytics'; h.app.render();
+  const analytics = nodeText(h.nodes.view);
+  assert.match(analytics, /Router → Internet: 1 recorded test/);
+  assert.match(analytics, /Device → Router: 0 recorded tests/);
+}
+
+async function testErrorRetryUsesFailedModeAndConsumesUiRejections() {
+  let settingsCalls = 0;
+  const h = harness(method => {
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    if (method === 'settings') { settingsCalls++; return Promise.reject(Object.assign(new Error('offline'), { code: 'offline' })); }
+    throw new Error('unexpected ' + method);
+  });
+  h.ready();
+  await flush();
+  await h.nodes['go-control'].click();
+  await flush();
+  assert.equal(h.app.state.status, 'error');
+  assert.equal(h.app.state.failedMode, 'router-internet');
+  h.app.state.mode = 'device-router';
+  await h.nodes['retry-test'].click();
+  await flush();
+  assert.equal(settingsCalls, 2, 'Retry restarts the exact failed mode');
+  assert.equal(h.app.state.failedMode, 'router-internet');
+}
+
+async function testTermsAcceptanceRejectionBecomesRecoverableError() {
+  const h = harness(method => {
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: false });
+    if (method === 'accept_terms') return Promise.reject(Object.assign(new Error('write failed'), { code: 'storage_error' }));
+    throw new Error('unexpected ' + method);
+  });
+  h.ready(); await flush();
+  await h.app.runMode('both');
+  assert.equal(h.nodes['terms-dialog'].open, true);
+  await h.nodes['accept-terms'].click();
+  assert.equal(h.app.state.status, 'error');
+  assert.equal(h.app.state.errorCode, 'storage_error');
+  assert.equal(h.app.state.failedMode, 'both');
+  assert.equal(h.nodes['retry-test'].hidden, false);
+}
+
+async function testPhaseAnnouncementsAreDistinctFromThrottledNumbers() {
+  const h = harness(() => Promise.resolve({ ok: true }));
+  Object.assign(h.app.state, { status: 'running', phase: 'download', gaugeValue: 10, gaugeUnit: 'Mbps', download: 10 });
+  h.app.render();
+  assert.equal(h.nodes['phase-announcer'].textContent, 'Download phase');
+  const firstNumeric = h.nodes['live-announcer'].textContent;
+  h.app.state.gaugeValue = 11; h.app.state.download = 11; h.app.render();
+  assert.equal(h.nodes['metric-download'].textContent, '11', 'visible value updates immediately');
+  assert.equal(h.nodes['live-announcer'].textContent, firstNumeric, 'numeric announcement remains throttled');
+  h.app.state.phase = 'upload'; h.app.state.upload = 5; h.app.state.gaugeValue = 5; h.app.render();
+  assert.equal(h.nodes['phase-announcer'].textContent, 'Upload phase', 'phase change is announced immediately');
+  h.app.render();
+  assert.equal(h.nodes['phase-announcer'].textContent, 'Upload phase', 'same phase is not re-announced');
+  await h.timers.tick(1000);
+  assert.equal(h.nodes['live-announcer'].textContent, 'upload 5 Mbps', 'throttle publishes the latest exact sample');
+  h.app.state.gaugeValue = 6; h.app.render();
+  await h.timers.tick(999);
+  assert.equal(h.nodes['live-announcer'].textContent, 'upload 5 Mbps');
+  await h.timers.tick(1);
+  assert.equal(h.nodes['live-announcer'].textContent, 'upload 6 Mbps');
 }
 
 async function testBothLocalFailureNeverStartsInternet() {
@@ -949,6 +1056,11 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testLocalMeasurementUsesFullWindowAndCumulativeElapsed();
   await testBothRunsLocalThenInternetAndKeepsSeparateResults();
   await testBothFailureKeepsCompletedLocalAndIdentifiesInternet();
+  await testCompletedResultsRenderPathMetadataAndModeScope();
+  await testHistoryOutcomesConversionAndAnalytics();
+  await testErrorRetryUsesFailedModeAndConsumesUiRejections();
+  await testTermsAcceptanceRejectionBecomesRecoverableError();
+  await testPhaseAnnouncementsAreDistinctFromThrottledNumbers();
   await testBothLocalFailureNeverStartsInternet();
   await testRunModeHandlesBackendTerminalStates();
   await testCancelWinsAgainstInflightStatus();

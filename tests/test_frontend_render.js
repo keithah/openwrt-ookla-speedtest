@@ -26,7 +26,7 @@ const ids = ['live-gauge', 'gauge-dial', 'gauge-readout', 'gauge-needle', 'gauge
   'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
   'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
   'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
-  'server-detail', 'results', 'view'];
+  'server-detail', 'results', 'view', 'phase-announcer', 'error-message', 'retry-test'];
 const nodes = Object.fromEntries(ids.map(id => [id, new FakeNode()]));
 nodes['live-announcer'].setAttribute('data-throttle-ms', '1000');
 const latency = new FakeNode();
@@ -68,6 +68,8 @@ assert.equal(nodes['primary-metrics'].hidden, false);
 assert.equal(latency.hidden, false);
 assert.equal(nodes['live-gauge'].attributes['data-phase'], 'download');
 assert.equal(nodes['phase-label'].textContent, 'Download');
+assert.equal(nodes['phase-announcer'].textContent, 'Download phase');
+assert.equal(nodes['live-gauge'].attributes['aria-busy'], 'true');
 assert.equal(nodes['gauge-value'].textContent, '50');
 assert.equal(nodes['metric-download'].textContent, '50.25');
 assert.equal(nodes['metric-ping'].textContent, '8.4');
@@ -81,6 +83,7 @@ Object.assign(app.state, { phase: 'upload', progress: 60, gaugeValue: 100, uploa
 app.render();
 assert.equal(nodes['live-gauge'].attributes['data-phase'], 'upload');
 assert.equal(nodes['phase-label'].textContent, 'Upload');
+assert.equal(nodes['phase-announcer'].textContent, 'Upload phase');
 assert.equal(nodes['metric-upload'].textContent, '42.75');
 assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 200));
 assert.equal(nodes['gauge-needle'].attributes.transform, 'rotate(0 230 230)');
@@ -100,5 +103,14 @@ assert.equal(nodes['metric-upload'].textContent, '42.75');
 assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 200));
 assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 200));
 assert.equal(nodes['phase-label'].textContent, 'Complete');
+assert.equal(nodes['phase-announcer'].textContent, 'Test complete');
+assert.equal(nodes['live-gauge'].attributes['aria-busy'], 'false');
+
+Object.assign(app.state, { status: 'error', phase: 'error', errorPath: 'internet', errorCode: 'network_timeout', failedMode: 'both' });
+app.render();
+assert.equal(nodes['error-message'].hidden, false);
+assert.match(nodes['error-message'].textContent, /Router → Internet/);
+assert.match(nodes['error-message'].textContent, /network_timeout/);
+assert.equal(nodes['retry-test'].hidden, false);
 
 console.log('frontend render ok');
