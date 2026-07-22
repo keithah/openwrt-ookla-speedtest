@@ -121,14 +121,15 @@ make package/openwrt-ookla-speedtest/compile V=s
 ```
 
 The web package depends on `ookla-speedtest-cli`; it does not package the
-vendor binary. The resulting package format follows the OpenWrt release:
-`.ipk` for older releases and `.apk` for newer releases.
+vendor binary. This repository's release workflow currently publishes OpenWrt
+`.ipk` packages.
 
 ## Updates and licensing
 
-GitHub Actions checks for new upstream releases and updates the package
-metadata when a newer compatible version is detected. The repository contains
-only package code, frontend assets, tests, and automation. Ookla’s proprietary
-binary remains subject to the [Ookla EULA](https://www.speedtest.net/about/eula).
+GitHub Actions tests the web package and publishes its three `.ipk` components
+from version tags. The separate `openwrt-ookla-speedtest-cli` repository tracks
+new upstream CLI versions and updates the dependency package. This repository
+contains only package code, frontend assets, tests, and automation. Ookla’s
+proprietary binary remains subject to the [Ookla EULA](https://www.speedtest.net/about/eula).
 
 This project is not affiliated with or endorsed by Ookla.
