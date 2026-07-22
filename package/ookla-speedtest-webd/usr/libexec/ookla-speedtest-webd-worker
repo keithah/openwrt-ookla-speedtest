@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+import argparse
+import importlib.machinery
+import importlib.util
+import os
+import selectors
+import subprocess
+import sys
+import time
+
+
+def load_service():
+    path = os.environ.get(
+        "OOKLA_WEBD_SERVICE",
+        os.path.join(os.path.dirname(os.path.realpath(__file__)), "ookla-speedtest-webd"),
+    )
+    loader = importlib.machinery.SourceFileLoader("ookla_speedtest_webd_worker_lib", path)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+def timeout_seconds():
+    try:
+        value = int(os.environ.get("OOKLA_LIVE_TIMEOUT", "120"))
+        return value if value > 0 else 120
+    except ValueError:
+        return 120
+
+
+def acquire_lock(service):
+    while True:
+        held = service.lock(ignore_starting=True)
+        if held != (None, None) and not (
+            isinstance(held, tuple) and held[0] == "storage_error"
+        ):
+            return held
+        time.sleep(0.01)
+
+
+def release_marker(service, job_id):
+    path = service.startingfile(job_id)
+    try:
+        marker = service.json.load(open(path))
+        if marker.get("job_id") == job_id:
+            os.unlink(path)
+    except Exception:
+        pass
+
+
+def history_result(service, job_id, result):
+    return {
+        "id": job_id,
+        "timestamp": int(time.time()),
+        "kind": "router-internet",
+        "server_id": (result.get("server") or {}).get("id"),
+        "server": result.get("server") or {},
+        "latency": (result.get("ping") or {}).get("latency"),
+        "download": result.get("download") or {},
+        "upload": result.get("upload") or {},
+        "isp": result.get("isp"),
+        "outcome": "success",
+    }
+
+
+def run(job_id, server_id):
+    service = load_service()
+    held = acquire_lock(service)
+    release_marker(service, job_id)
+    state = service.readjob(job_id) or {
+        "ok": True,
+        "job_id": job_id,
+        "started": int(time.time()),
+    }
+    state.update({"state": "running", "phase": "starting", "pid": os.getpid()})
+    service.writejob(job_id, state)
+    command = [
+        service.binary,
+        "--accept-license",
+        "--format=jsonl",
+        "--progress=yes",
+        "--progress-update-interval=500",
+    ]
+    if server_id is not None:
+        command += ["--server-id", server_id]
+    process = None
+    error_code = None
+    result = None
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=0,
+        )
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ)
+        deadline = time.monotonic() + timeout_seconds()
+        while True:
+            if time.monotonic() >= deadline:
+                error_code = "timeout"
+                break
+            ready = selector.select(0.1)
+            if not ready:
+                if process.poll() is not None:
+                    break
+                continue
+            line = process.stdout.readline(service.maxout + 2)
+            if not line:
+                if process.poll() is not None:
+                    break
+                continue
+            try:
+                event = service.parse_jsonl_record(line)
+                reduced = service.reduce_event(event)
+            except ValueError as exc:
+                error_code = (
+                    "output_too_large"
+                    if str(exc) == "oversized_jsonl_record"
+                    else "malformed_output"
+                )
+                break
+            except Exception:
+                error_code = "malformed_output"
+                break
+            if reduced is None:
+                continue
+            state.update(reduced)
+            state["state"] = "running"
+            phase = reduced.get("phase")
+            if phase in ("download", "upload"):
+                trace_name = phase + "_trace"
+                trace = state.setdefault(trace_name, [])
+                trace.append(
+                    {
+                        "timestamp": int(time.time() * 1000),
+                        "value": reduced[phase + "_mbps"],
+                    }
+                )
+                del trace[:-120]
+            if phase == "complete":
+                result = reduced["result"]
+            service.writejob(job_id, state)
+        if error_code:
+            process.terminate()
+        try:
+            return_code = process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            return_code = -1
+        if error_code is None and return_code != 0:
+            error_code = "speedtest_failed"
+        if error_code is None and result is None:
+            error_code = "malformed_output"
+        finished = int(time.time())
+        if error_code is not None:
+            state.update(
+                {
+                    "ok": False,
+                    "state": "error",
+                    "phase": "error",
+                    "finished": finished,
+                    "error": {"code": error_code},
+                }
+            )
+            service.append_history(
+                {
+                    "id": job_id,
+                    "timestamp": finished,
+                    "kind": "router-internet",
+                    "outcome": "error",
+                    "error": {"code": error_code},
+                }
+            )
+        else:
+            state.update(
+                {
+                    "ok": True,
+                    "state": "complete",
+                    "phase": "complete",
+                    "progress": 1.0,
+                    "finished": finished,
+                    "result": result,
+                }
+            )
+            service.append_history(history_result(service, job_id, result))
+        service.writejob(job_id, state)
+        return 0
+    except Exception:
+        finished = int(time.time())
+        state.update(
+            {
+                "ok": False,
+                "state": "error",
+                "phase": "error",
+                "finished": finished,
+                "error": {"code": "speedtest_failed"},
+            }
+        )
+        try:
+            service.append_history(
+                {
+                    "id": job_id,
+                    "timestamp": finished,
+                    "kind": "router-internet",
+                    "outcome": "error",
+                    "error": {"code": "speedtest_failed"},
+                }
+            )
+            service.writejob(job_id, state)
+        except Exception:
+            pass
+        return 0
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+        release_marker(service, job_id)
+        service.unlock(held)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--job-id", required=True)
+    parser.add_argument("--server-id")
+    args = parser.parse_args()
+    if not __import__("re").fullmatch(r"[0-9a-f]{32}", args.job_id):
+        parser.error("invalid job id")
+    if args.server_id is not None and not args.server_id.isdigit():
+        parser.error("invalid server id")
+    return run(args.job_id, args.server_id)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

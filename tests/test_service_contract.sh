@@ -21,6 +21,19 @@ printf '%s\n' '{"method":"accept_terms"}' | "$SVC" | grep -q '"ok":true'
 printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"terms_accepted":true'
 out=$(printf '%s\n' '{"method":"start","server_id":"42"}' | "$SVC"); echo "$out" | grep -q '"ok":true'
 [ -s "$OOKLA_WEBD_HISTORY" ]
+out=$(printf '%s\n' '{"method":"start_live","server_id":"42"}' | "$SVC"); echo "$out" | grep -Eq '"job_id":"[0-9a-f]{32}"'
+job_id=$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
+live=''
+i=0
+while [ "$i" -lt 100 ]; do
+ live=$(printf '{"method":"live_status","job_id":"%s"}\n' "$job_id" | "$SVC")
+ echo "$live" | grep -q '"state":"complete"' && break
+ i=$((i+1)); sleep .05
+done
+echo "$live" | grep -q '"state":"complete"'
+echo "$live" | grep -q '"id":42'
+printf '%s\n' '{"method":"live_status","job_id":"../bad"}' | "$SVC" | grep -q 'invalid_job_id'
+sleep .05
 out=$(printf '%s\n' '{"method":"history"}' | "$SVC"); echo "$out" | grep -q '"items"'
 out=$(printf '%s\n' '{"method":"local_download","bytes":1024}' | "$SVC"); echo "$out" | grep -q '"bytes":1024'; echo "$out" | grep -q '"data"'
 out=$(printf '%s\n' '{"method":"local_upload","data":"01234567"}' | "$SVC"); echo "$out" | grep -q '"bytes":8'

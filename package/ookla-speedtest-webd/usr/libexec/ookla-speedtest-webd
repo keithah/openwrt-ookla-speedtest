@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-import os,sys,json,time,subprocess,fcntl,re,tempfile,errno
+import os,sys,json,time,subprocess,fcntl,re,tempfile,errno,signal
 run=os.environ.get('OOKLA_WEBD_RUN_DIR','/var/run/ookla-speedtest-webd'); hist=os.environ.get('OOKLA_WEBD_HISTORY','/etc/ookla-speedtest-webd/history.jsonl'); binary=os.environ.get('OOKLA_SPEEDTEST_BIN','/usr/bin/speedtest'); maxout=1024*1024
 os.makedirs(run,exist_ok=True); os.makedirs(os.path.dirname(hist),exist_ok=True)
+jobsdir=os.path.join(run,'jobs'); os.makedirs(jobsdir,exist_ok=True)
+worker=os.environ.get('OOKLA_WEBD_WORKER',os.path.join(os.path.dirname(os.path.realpath(__file__)),'ookla-speedtest-webd-worker'))
 def retention():
  try:
   v=os.environ.get('OOKLA_HISTORY_RETENTION','100')
@@ -12,7 +14,12 @@ def retention():
  except Exception: return 100
 def out(x): print(json.dumps(x,separators=(',',':')))
 def new_id(): return os.urandom(16).hex()
-def lock():
+def startingfile(job_id): return os.path.join(jobsdir,job_id+'.starting')
+def has_starting():
+ try: return any(re.fullmatch(r'[0-9a-f]{32}\.starting',name) for name in os.listdir(jobsdir))
+ except OSError: return False
+def lock(ignore_starting=False):
+ if not ignore_starting and has_starting(): return None,None
  p=os.path.join(run,'start.lock')
  try: f=open(p,'w')
  except OSError: return ('storage_error',None)
@@ -93,8 +100,125 @@ def reduce_event(event):
   result['result']={key:(event.get('result') or {}).get(key) for key in ('id','url')}
   return {'phase':'complete','progress':1.0,'result':result}
  return None
+def valid_job_id(value): return isinstance(value,str) and re.fullmatch(r'[0-9a-f]{32}',value) is not None
+def jobfile(job_id): return os.path.join(jobsdir,job_id+'.json')
+def readjob(job_id):
+ try: return json.load(open(jobfile(job_id)))
+ except Exception: return None
+def writejob(job_id,state): atomic_write(jobfile(job_id),json.dumps(state,separators=(',',':')))
+def live_ttl():
+ try:
+  value=int(os.environ.get('OOKLA_LIVE_JOB_TTL','600'))
+  return value if value>=0 else 600
+ except Exception: return 600
+def process_exists(pid):
+ try: os.kill(int(pid),0); return True
+ except (OSError,ValueError,TypeError): return False
+def cleanup_live_jobs():
+ now=time.time(); ttl=live_ttl()
+ try: names=os.listdir(jobsdir)
+ except OSError: names=[]
+ for name in names:
+  if not re.fullmatch(r'[0-9a-f]{32}\.json',name): continue
+  path=os.path.join(jobsdir,name)
+  try:
+   row=json.load(open(path)); terminal=row.get('state') in ('complete','cancelled','error')
+   age=now-os.path.getmtime(path)
+   if terminal and age>ttl: os.unlink(path)
+  except Exception: pass
+ try:
+  markers=[name for name in os.listdir(jobsdir) if re.fullmatch(r'[0-9a-f]{32}\.starting',name)]
+ except OSError: markers=[]
+ for name in markers:
+  path=os.path.join(jobsdir,name); jid=name[:-9]
+  try:
+   age=now-os.path.getmtime(path); row=readjob(jid)
+   if age>10 and (not row or not process_exists(row.get('pid'))): os.unlink(path)
+  except Exception: pass
+def append_history(rec):
+ n=retention(); items=readhist()+[rec]; writehist(items if n==0 else items[-n:])
+def verified_worker_pid(pid,job_id):
+ try:
+  raw=open('/proc/%d/cmdline'%int(pid),'rb').read().split(b'\0')
+  args=[x.decode('utf-8','surrogateescape') for x in raw if x]
+  return os.path.realpath(worker) in [os.path.realpath(x) for x in args] and '--job-id' in args and args[args.index('--job-id')+1]==job_id
+ except Exception: return False
 def main(req):
  m=req.get('method','')
+ if m in ('start_live','live_status','cancel_live'): cleanup_live_jobs()
+ if m=='live_status':
+  jid=req.get('job_id')
+  if not valid_job_id(jid): return {'ok':False,'error':{'code':'invalid_job_id'}}
+  row=readjob(jid)
+  return row if row is not None else {'ok':False,'error':{'code':'job_not_found'}}
+ if m=='cancel_live':
+  jid=req.get('job_id')
+  if not valid_job_id(jid): return {'ok':False,'error':{'code':'invalid_job_id'}}
+  row=readjob(jid)
+  if row is None: return {'ok':False,'error':{'code':'job_not_found'}}
+  if row.get('state') in ('complete','cancelled','error'): return {'ok':False,'error':{'code':'job_not_running'}}
+  pid=row.get('pid')
+  if not verified_worker_pid(pid,jid): return {'ok':False,'error':{'code':'job_not_running'}}
+  reserved=False; held=None; markerpath=startingfile(jid)
+  try:
+   try:
+    fd=os.open(markerpath,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    with os.fdopen(fd,'w') as f: json.dump({'job_id':jid},f)
+    reserved=True
+   except FileExistsError:
+    marker=json.load(open(markerpath))
+    if marker.get('job_id')!=jid: return {'ok':False,'error':{'code':'busy'}}
+    reserved=True
+   try: os.killpg(int(pid),signal.SIGTERM)
+   except OSError: return {'ok':False,'error':{'code':'job_not_running'}}
+   deadline=time.time()+1
+   while time.time()<deadline:
+    held=lock(ignore_starting=True)
+    if held!=(None,None) and not (isinstance(held,tuple) and held[0]=='storage_error'): break
+    held=None; time.sleep(.01)
+   if held is None: return {'ok':False,'error':{'code':'storage_error'}}
+   row=readjob(jid) or row
+   if row.get('state') in ('complete','cancelled','error'): return {'ok':False,'error':{'code':'job_not_running'}}
+   finished=int(time.time()); row.update({'ok':True,'state':'cancelled','phase':'cancelled','finished':finished}); writejob(jid,row)
+   append_history({'id':jid,'timestamp':finished,'kind':'router-internet','outcome':'cancelled'})
+   return {'ok':True,'job_id':jid,'state':'cancelled'}
+  except Exception: return {'ok':False,'error':{'code':'storage_error'}}
+  finally:
+   if held is not None: unlock(held)
+   if reserved:
+    try:
+     marker=json.load(open(markerpath))
+     if marker.get('job_id')==jid: os.unlink(markerpath)
+    except Exception: pass
+ if m=='start_live':
+  sid=req.get('server_id')
+  if sid is not None and (not re.fullmatch(r'[0-9]+',str(sid)) or int(sid)<0): return {'ok':False,'error':{'code':'invalid_server_id'}}
+  if not terms_accepted(): return {'ok':False,'error':{'code':'terms_required','message':'Ookla Terms and Privacy Policy acceptance is required'}}
+  lk=lock()
+  if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
+  if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
+  jid=new_id(); marked=False; markerpath=startingfile(jid)
+  try:
+   try:
+    fd=os.open(markerpath,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    with os.fdopen(fd,'w') as f: json.dump({'job_id':jid},f)
+    marked=True
+   except FileExistsError: return {'ok':False,'error':{'code':'busy'}}
+   initial={'ok':True,'job_id':jid,'state':'starting','phase':'starting','started':int(time.time())}
+   writejob(jid,initial)
+   cmd=[worker,'--job-id',jid]
+   if sid is not None: cmd += ['--server-id',str(int(sid))]
+   child=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True,close_fds=True)
+   initial['pid']=child.pid; writejob(jid,initial)
+   return {'ok':True,'job_id':jid}
+  except Exception:
+   try: os.unlink(jobfile(jid))
+   except OSError: pass
+   if marked:
+    try: os.unlink(markerpath)
+    except OSError: pass
+   return {'ok':False,'error':{'code':'storage_error'}}
+  finally: unlock(lk)
  if m=='status':
   try: st=json.load(open(os.path.join(run,'state.json')))
   except: st={'state':'idle'}
