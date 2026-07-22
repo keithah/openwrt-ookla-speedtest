@@ -137,6 +137,7 @@ def local_run_lease():
   value=int(os.environ.get('OOKLA_LOCAL_RUN_LEASE','15'))
   return value if value>0 else 15
  except Exception: return 15
+def local_heartbeat_interval(): return min(5,max(1,local_run_lease()/3))
 def acquire_local_lock():
  deadline=time.monotonic()+2
  while time.monotonic()<deadline:
@@ -193,6 +194,10 @@ def active_live_run():
  return None
 def heartbeat_local_run(run_id):
  if not valid_job_id(run_id): return {'ok':False,'error':{'code':'invalid_local_run_id'}}
+ now=time.time(); row=readlocaljob(run_id)
+ try:
+  if row.get('state')=='active' and now-float(row.get('updated',0))<local_heartbeat_interval(): return {'ok':True}
+ except Exception: pass
  lk=acquire_local_lock()
  if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
  if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
@@ -200,6 +205,7 @@ def heartbeat_local_run(run_id):
   cleanup_local_runs(); row=readlocaljob(run_id)
   if row is None: return {'ok':False,'error':{'code':'local_run_not_found'}}
   if row.get('state')!='active': return {'ok':False,'error':{'code':'local_run_not_active'}}
+  if time.time()-float(row.get('updated',0))<local_heartbeat_interval(): return {'ok':True}
   row['updated']=int(time.time()); writelocaljob(run_id,row); return {'ok':True}
  except Exception: return {'ok':False,'error':{'code':'storage_error'}}
  finally: unlock(lk)

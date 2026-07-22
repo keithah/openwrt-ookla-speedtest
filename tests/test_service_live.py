@@ -835,6 +835,28 @@ class LocalRunLifecycleTests(unittest.TestCase):
         self.assertTrue(downloaded["ok"])
         self.assertGreater(renewed["updated"], row["updated"])
 
+    def test_rapid_transfer_heartbeats_do_not_rewrite_fresh_marker(self):
+        run_id = self.rpc("begin_local")["run_id"]
+        marker = self.run_dir / "local-jobs" / f"{run_id}.json"
+        original = marker.read_bytes()
+        original_mtime = marker.stat().st_mtime_ns
+
+        self.rpc("local_download", run_id=run_id, bytes=1024)
+        self.rpc("local_upload", run_id=run_id, data="1234")
+
+        self.assertEqual(marker.read_bytes(), original)
+        self.assertEqual(marker.stat().st_mtime_ns, original_mtime)
+
+        row = json.loads(marker.read_text())
+        row["updated"] = int(time.time()) - 6
+        marker.write_text(json.dumps(row))
+        stale_mtime = marker.stat().st_mtime_ns
+        self.rpc("local_download", run_id=run_id, bytes=1024)
+        renewed = json.loads(marker.read_text())
+
+        self.assertGreater(renewed["updated"], row["updated"])
+        self.assertGreater(marker.stat().st_mtime_ns, stale_mtime)
+
     def test_abandoned_local_lease_expires_and_releases_measurements(self):
         run_id = self.rpc("begin_local")["run_id"]
         marker = self.run_dir / "local-jobs" / f"{run_id}.json"
