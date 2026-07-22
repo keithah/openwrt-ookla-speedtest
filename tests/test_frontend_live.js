@@ -142,6 +142,7 @@ async function testLiveSamplesReachComplete() {
   const result = await promise;
   assert.equal(h.app.state.phase, 'complete');
   assert.equal(h.app.state.status, 'done');
+  assert.equal(h.app.state.failedPhase, null);
   assert.equal(result.download_mbps, 296.73);
   assert.equal(result.upload_mbps, 31);
   assert.equal(h.app.state.download, 296.73);
@@ -168,6 +169,8 @@ async function testCadenceAndRetries() {
   assert.deepEqual(h.calls.filter(call => call.method === 'live_status').map(call => call.at), [0, 500, 1000, 2000, 4000]);
   assert.equal(h.app.state.download, 55, 'transport failures preserve the last real sample');
   assert.deepEqual(Array.from(h.app.state.traces.download), [55]);
+  assert.equal(h.app.state.failedPhase, 'download');
+  assert.match(h.nodes['error-message'].textContent, /Router → Internet download failed/);
   assert.equal(h.app.state.pollFailures, 4);
   assert.equal(h.app.state.status, 'error');
 }
@@ -191,12 +194,14 @@ async function testCancelIsImmediateAndSingleShot() {
   await flush();
   h.app.state.activeJob = 'cancel-job';
   h.app.state.status = 'running';
+  h.app.state.failedPhase = 'download';
   h.nodes['cancel-test'].click();
   h.nodes['cancel-test'].click();
   await flush();
   assert.equal(h.app.state.cancelRequested, true);
   assert.equal(h.app.state.phase, 'cancelled');
   assert.equal(h.app.state.status, 'cancelled');
+  assert.equal(h.app.state.failedPhase, null);
   const cancels = h.calls.filter(call => call.method === 'cancel_live');
   assert.equal(cancels.length, 1);
   assert.equal(cancels[0].params.job_id, 'cancel-job');
@@ -567,9 +572,9 @@ async function testSupersedingRunCancelsInflightLocalRecord() {
 
 async function testLocalFailuresReleaseReservationAndKeepOriginalError() {
   const cases = [
-    { point: 'ping', code: 'local_ping_failed' },
-    { point: 'transfer', code: 'local_transfer_failed' },
-    { point: 'record', code: 'local_record_failed' }
+    { point: 'ping', code: 'local_ping_failed', phase: 'ping' },
+    { point: 'transfer', code: 'local_transfer_failed', phase: 'download' },
+    { point: 'record', code: 'local_record_failed', phase: 'upload' }
   ];
   for (const testCase of cases) {
     const runId = testCase.point === 'ping' ? 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
@@ -600,6 +605,9 @@ async function testLocalFailuresReleaseReservationAndKeepOriginalError() {
     assert.equal(h.app.state.status, 'error');
     assert.equal(h.app.state.errorPath, 'local');
     assert.equal(h.app.state.errorCode, testCase.code, 'cleanup failure must not replace the original error');
+    assert.equal(h.app.state.failedPhase, testCase.phase);
+    assert.match(h.nodes['error-message'].textContent, new RegExp('Device → Router '+testCase.phase+' failed'));
+    assert.match(h.nodes['phase-announcer'].textContent, new RegExp('Device → Router '+testCase.phase+' failed'));
     assert.equal(h.app.state.results.local, null);
   }
 }
@@ -705,6 +713,29 @@ async function testCompletedResultsRenderPathMetadataAndModeScope() {
   h.app.render();
   assert.equal(h.nodes.results.children.length, 1);
   assert.match(nodeText(h.nodes.results.children[0]), /Device → Router/);
+}
+
+async function testTerminalInternetErrorsPreservePhaseAndLastSample() {
+  const cases = [
+    { phase: 'ping', samples: [status('phase-job', { phase: 'ping', ping_ms: 7.5 })], retained: 'ping', value: 7.5 },
+    { phase: 'download', samples: [status('phase-job', { phase: 'ping', ping_ms: 8 }), status('phase-job', { phase: 'download', download_mbps: 123, download_trace: [{ value: 123 }] })], retained: 'download', value: 123 },
+    { phase: 'upload', samples: [status('phase-job', { phase: 'ping', ping_ms: 8 }), status('phase-job', { phase: 'download', download_mbps: 123 }), status('phase-job', { phase: 'upload', upload_mbps: 34, upload_trace: [{ value: 34 }] })], retained: 'upload', value: 34 }
+  ];
+  for (const testCase of cases) {
+    const responses = [{ ok: true, terms_accepted: true }, { ok: true, job_id: 'phase-job' }]
+      .concat(testCase.samples)
+      .concat([status('phase-job', { state: 'error', phase: 'error', error: { code: 'speedtest_failed' } })]);
+    const h = harness(() => Promise.resolve(responses.shift()));
+    const run = h.app.runMode('router-internet');
+    await flush();
+    for (let i = 0; i < testCase.samples.length; i++) await h.timers.tick(500);
+    await run;
+    assert.equal(h.app.state.status, 'error');
+    assert.equal(h.app.state.failedPhase, testCase.phase);
+    assert.equal(h.app.state[testCase.retained], testCase.value, testCase.phase+' keeps its last valid sample');
+    assert.match(h.nodes['error-message'].textContent, new RegExp('Router → Internet '+testCase.phase+' failed \\(speedtest_failed\\)'));
+    assert.match(h.nodes['phase-announcer'].textContent, new RegExp('Router → Internet '+testCase.phase+' failed'));
+  }
 }
 
 async function testHistoryOutcomesConversionAndAnalytics() {
@@ -1057,6 +1088,7 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testBothRunsLocalThenInternetAndKeepsSeparateResults();
   await testBothFailureKeepsCompletedLocalAndIdentifiesInternet();
   await testCompletedResultsRenderPathMetadataAndModeScope();
+  await testTerminalInternetErrorsPreservePhaseAndLastSample();
   await testHistoryOutcomesConversionAndAnalytics();
   await testErrorRetryUsesFailedModeAndConsumesUiRejections();
   await testTermsAcceptanceRejectionBecomesRecoverableError();

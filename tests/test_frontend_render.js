@@ -106,11 +106,13 @@ assert.equal(nodes['phase-label'].textContent, 'Complete');
 assert.equal(nodes['phase-announcer'].textContent, 'Test complete');
 assert.equal(nodes['live-gauge'].attributes['aria-busy'], 'false');
 
-Object.assign(app.state, { status: 'error', phase: 'error', errorPath: 'internet', errorCode: 'network_timeout', failedMode: 'both' });
+Object.assign(app.state, { status: 'error', phase: 'error', errorPath: 'internet', errorCode: 'network_timeout', failedPhase: 'download', failedMode: 'both' });
 app.render();
 assert.equal(nodes['error-message'].hidden, false);
 assert.match(nodes['error-message'].textContent, /Router → Internet/);
+assert.match(nodes['error-message'].textContent, /download failed/);
 assert.match(nodes['error-message'].textContent, /network_timeout/);
+assert.match(nodes['phase-announcer'].textContent, /Router → Internet download failed/);
 assert.equal(nodes['retry-test'].hidden, false);
 
 console.log('frontend render ok');
