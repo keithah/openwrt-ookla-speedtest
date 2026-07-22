@@ -89,6 +89,19 @@ function status(job, fields) {
   return Object.assign({ ok: true, job_id: job, state: 'running' }, fields);
 }
 
+function complete(job, download) {
+  return status(job, { state: 'complete', phase: 'complete', progress: 1, ping_ms: 8, download_mbps: download, upload_mbps: 20,
+    download_trace: [{ timestamp: 1, value: download }], upload_trace: [{ timestamp: 2, value: 20 }],
+    result: { download: { bandwidth: download * 125000 }, upload: { bandwidth: 2500000 }, ping: { latency: 8 }, packetLoss: 0,
+      isp: 'ISP ' + job, interface: { name: 'wan' }, server: { id: 42, name: job }, network_context: { note: job } } });
+}
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
 async function testLiveSamplesReachComplete() {
   const responses = [
     { ok: true, job_id: 'job-a' },
@@ -190,11 +203,201 @@ async function testMalformedBackendStateIsStableError() {
   assert.equal(h.app.state.phase, 'error');
 }
 
+async function testRunModeUsesTermsServerLiveAndHistory() {
+  const h = harness((method, params) => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'integrated-job' });
+    if (method === 'live_status') return Promise.resolve(complete('integrated-job', 80));
+    if (method === 'history') return Promise.resolve({ ok: true, items: [{ id: 'history-row' }] });
+    return Promise.reject(new Error('unexpected method ' + method));
+  });
+  h.app.state.server = { id: 42, name: 'Chosen' };
+  await h.app.runMode('router-internet');
+  assert.deepEqual(h.calls.map(call => call.method), ['settings', 'start_live', 'live_status', 'history']);
+  assert.equal(h.calls[1].params.server_id, 42);
+  assert.equal(h.app.state.status, 'done');
+  assert.equal(h.app.state.results.internet.download_mbps, 80);
+  assert.equal(h.app.state.history[0].id, 'history-row');
+  assert.equal(h.calls.some(call => call.method === 'runTest'), false, 'router tests never use the legacy synchronous bridge');
+}
+
+async function testTermsAcceptanceResumesLiveRun() {
+  let accepted = false;
+  const h = harness(method => {
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: accepted });
+    if (method === 'accept_terms') { accepted = true; return Promise.resolve({ ok: true }); }
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'terms-job' });
+    if (method === 'live_status') return Promise.resolve(complete('terms-job', 90));
+    throw new Error('unexpected ' + method);
+  });
+  h.ready();
+  await flush();
+  await h.app.runMode('router-internet');
+  assert.equal(h.nodes['terms-dialog'].open, true);
+  assert.equal(h.calls.some(call => call.method === 'start_live'), false);
+  h.nodes['accept-terms'].click();
+  await flush();
+  assert.equal(h.calls.filter(call => call.method === 'accept_terms').length, 1);
+  assert.equal(h.calls.filter(call => call.method === 'start_live').length, 1);
+  assert.equal(h.app.state.status, 'done');
+}
+
+async function testDeviceRouterKeepsLocalBridge() {
+  const h = harness((method, params) => {
+    if (method === 'local_download') return Promise.resolve({ ok: true, bytes: params.bytes });
+    if (method === 'local_upload') return Promise.resolve({ ok: true, bytes: params.data.length });
+    if (method === 'record_local') return Promise.resolve({ ok: true });
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    throw new Error('unexpected ' + method);
+  });
+  await h.app.runMode('device-router');
+  assert.equal(h.calls.filter(call => call.method === 'local_download').length, 17);
+  assert.equal(h.calls.filter(call => call.method === 'local_upload').length, 16);
+  assert.equal(h.calls.filter(call => call.method === 'record_local').length, 1);
+  assert.equal(h.calls.some(call => ['settings', 'start_live', 'live_status', 'runTest'].includes(call.method)), false);
+  assert.equal(h.app.state.status, 'done');
+  assert.ok(h.app.state.results.local);
+}
+
+async function testRunModeHandlesBackendTerminalStates() {
+  for (const terminal of ['error', 'cancelled']) {
+    const h = harness(method => {
+      if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+      if (method === 'start_live') return Promise.resolve({ ok: true, job_id: terminal + '-job' });
+      if (method === 'live_status') return Promise.resolve(status(terminal + '-job', {
+        ok: terminal !== 'error', state: terminal, phase: terminal, error: terminal === 'error' ? { code: 'speedtest_failed' } : undefined
+      }));
+      return Promise.resolve({ ok: true, items: [] });
+    });
+    await h.app.runMode('router-internet');
+    assert.equal(h.app.state.status, terminal);
+    assert.equal(h.app.state.phase, terminal);
+    assert.equal(h.calls.some(call => call.method === 'history'), false);
+  }
+}
+
+async function testCancelWinsAgainstInflightStatus() {
+  const live = deferred();
+  const h = harness(method => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'cancel-race' });
+    if (method === 'live_status') return live.promise;
+    if (method === 'cancel_live') return Promise.resolve({ ok: true, job_id: 'cancel-race', state: 'cancelled' });
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    throw new Error('unexpected ' + method);
+  });
+  const run = h.app.runMode('router-internet');
+  await flush();
+  await h.app.cancelTest();
+  live.resolve(complete('cancel-race', 999));
+  await run;
+  assert.equal(h.app.state.status, 'cancelled');
+  assert.equal(h.app.state.phase, 'cancelled');
+  assert.equal(h.app.state.download, null);
+  assert.equal(h.app.state.results.internet, null);
+  assert.equal(h.calls.filter(call => call.method === 'cancel_live').length, 1);
+  assert.equal(h.calls.some(call => call.method === 'history'), false);
+}
+
+async function testCancelWinsAgainstInflightFailure() {
+  const live = deferred();
+  const h = harness(method => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'cancel-failure' });
+    if (method === 'live_status') return live.promise;
+    if (method === 'cancel_live') return Promise.resolve({ ok: true, job_id: 'cancel-failure', state: 'cancelled' });
+    throw new Error('unexpected ' + method);
+  });
+  const run = h.app.runMode('router-internet');
+  await flush();
+  await h.app.cancelTest();
+  live.reject(new Error('late transport failure'));
+  await flush();
+  assert.equal(h.app.state.pollFailures, 0, 'cancelled in-flight failure does not enter retry backoff');
+  await run;
+  assert.equal(h.app.state.status, 'cancelled');
+}
+
+async function testStaleSuccessCannotOverwriteNewRun() {
+  const oldLive = deferred();
+  let starts = 0;
+  const h = harness(method => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: ++starts === 1 ? 'old-job' : 'new-job' });
+    if (method === 'live_status') return starts === 1 ? oldLive.promise : Promise.resolve(complete('new-job', 200));
+    if (method === 'history') return Promise.resolve({ ok: true, items: [{ id: 'new-history' }] });
+    throw new Error('unexpected ' + method);
+  });
+  const oldRun = h.app.runMode('router-internet');
+  await flush();
+  const newRun = h.app.runMode('router-internet');
+  await newRun;
+  oldLive.resolve(complete('old-job', 999));
+  await oldRun;
+  assert.equal(h.app.state.status, 'done');
+  assert.equal(h.app.state.activeJob, 'new-job');
+  assert.equal(h.app.state.download, 200);
+  assert.equal(h.app.state.results.internet.download_mbps, 200);
+  assert.equal(h.app.state.history[0].id, 'new-history');
+}
+
+async function testStaleFailureCannotErrorNewRunOrRetry() {
+  const oldLive = deferred();
+  let starts = 0;
+  const h = harness(method => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: ++starts === 1 ? 'old-failure' : 'new-success' });
+    if (method === 'live_status') return starts === 1 ? oldLive.promise : Promise.resolve(complete('new-success', 300));
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    throw new Error('unexpected ' + method);
+  });
+  const oldRun = h.app.runMode('router-internet');
+  await flush();
+  await h.app.runMode('router-internet');
+  const pollsBefore = h.calls.filter(call => call.method === 'live_status').length;
+  oldLive.reject(new Error('old transport failure'));
+  await h.timers.tick(500);
+  await oldRun;
+  assert.equal(h.calls.filter(call => call.method === 'live_status').length, pollsBefore, 'stale failure does not retry');
+  assert.equal(h.app.state.status, 'done');
+  assert.equal(h.app.state.download, 300);
+  assert.equal(h.app.state.pollFailures, 0);
+}
+
+async function testMalformedNumericSamplesBecomeStableErrors() {
+  const malformed = [
+    status('numeric-job', { phase: 'download', progress: 0.5, download_mbps: 'fast' }),
+    status('numeric-job', { phase: 'ping', progress: 0.5, ping_ms: NaN }),
+    status('numeric-job', { phase: 'upload', progress: 0.5, upload_mbps: 2, upload_trace: [{ timestamp: 1, value: Infinity }] })
+  ];
+  for (const payload of malformed) {
+    const responses = [{ ok: true, job_id: 'numeric-job' }, payload];
+    const h = harness(() => Promise.resolve(responses.shift()));
+    const pending = h.app.internetTest().then(() => null, reason => reason);
+    await flush();
+    assert.equal(h.app.state.status, 'error', 'malformed numeric input must fail without another poll');
+    const error = await pending;
+    assert.equal(error.code, 'malformed_live_status');
+    assert.equal(h.app.state.status, 'error');
+    assert.equal(Number.isFinite(h.app.state.gaugeValue), true);
+  }
+}
+
 (async function main() {
   await testLiveSamplesReachComplete();
   await testCadenceAndRetries();
   await testStaleResponsesAreIgnored();
   await testCancelIsImmediateAndSingleShot();
   await testMalformedBackendStateIsStableError();
+  await testRunModeUsesTermsServerLiveAndHistory();
+  await testTermsAcceptanceResumesLiveRun();
+  await testDeviceRouterKeepsLocalBridge();
+  await testRunModeHandlesBackendTerminalStates();
+  await testCancelWinsAgainstInflightStatus();
+  await testCancelWinsAgainstInflightFailure();
+  await testStaleSuccessCannotOverwriteNewRun();
+  await testStaleFailureCannotErrorNewRunOrRetry();
+  await testMalformedNumericSamplesBecomeStableErrors();
   console.log('frontend live polling ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });
