@@ -37,6 +37,9 @@ jobs:
       - name: Frontend render behavior
         run: node tests/test_frontend_render.js
 
+      - name: Frontend live polling behavior
+        run: node tests/test_frontend_live.js
+
       - name: Gauge model
         run: node tests/test_gauge.js
 
