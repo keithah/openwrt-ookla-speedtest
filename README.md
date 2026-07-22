@@ -1,24 +1,25 @@
 # Unofficial Ookla Speedtest Web for OpenWrt
 
 This is an unofficial community package. Run an Ookla Speedtest from your router and view the result in a native
-LuCI or GL.iNet Applications experience. The test is explicitly labeled
-The interface offers separate **router → internet** and **device → router**
+LuCI or GL.iNet Applications experience. The interface offers separate
+**router → internet** and **device → router**
 measurements, plus a **Both** action that runs them together and maps the two
 paths separately in results, history, and analytics.
 
 ![Ookla Speedtest Web dashboard](docs/screenshots/dashboard.png)
 
-This screenshot is captured from the actual shared frontend shipped in this
-repository—not from the macOS Speedtest application.
-
 ## What you get
 
-- A Speedtest-style **GO** dashboard with download, upload, ping, ISP, and
-  connection details.
-- Device → Router testing for the local Wi-Fi or Ethernet path without
-  confusing it with internet performance.
-- A Both mode that runs the local and internet measurements from one action
-  and presents separate result cards.
+- A Speedtest-style **GO** dashboard whose live ping, download, and upload
+  gauge follows real measurements from the Ookla CLI's JSONL event stream.
+- An adaptive gauge scale and needle that track changing speeds without
+  pinning faster connections at a fixed maximum.
+- Device → Router testing with live rolling gauges for the local Wi-Fi or
+  Ethernet path, kept distinct from internet performance.
+- A **Both** mode that runs Device → Router first and Router → Internet second,
+  then presents separate final result cards for each path.
+- A focused final state that returns the compact **GO** control and keeps the
+  completed measurements visible in the result cards.
 - Manual server selection with search, alongside automatic server selection.
 - Persistent test history and simple trend analytics.
 - Settings and About views from the upper-right menu.
@@ -49,17 +50,22 @@ to that package’s OpenWrt recipe.
 
 ## How it works
 
-When you press **GO**, the web view calls the authenticated router RPC
-service. The service launches `/usr/bin/speedtest` on the router, parses the
-JSON result, stores a bounded history, and returns the result to the view.
-LuCI and GL.iNet use the same frontend and service, so the results and behavior
-are consistent between both views.
+When you press **GO** for Router → Internet, the web view calls the
+authenticated router RPC service. A request-scoped worker launches
+`/usr/bin/speedtest` in JSONL mode and reduces its ping, download, upload, and
+result events into bounded live state. The view polls that state to drive the
+live gauge, adaptive needle scale, and rolling transfer traces; the completed
+result is stored in bounded history and shown in the final result card. LuCI
+and GL.iNet use the same frontend and service, so the results and behavior are
+consistent between both views.
 
 For Device → Router, the browser transfers bounded test payloads through the
 same authenticated RPC session and measures application-layer download,
-upload, and latency. It does not open an additional HTTP port. Local and
-internet records carry different path labels and remain separate in history
-and analytics.
+upload, and latency while updating the same gauge with rolling local samples.
+It does not open an additional HTTP port. Local and internet records carry
+different path labels and remain separate in history and analytics. **Both**
+runs the local measurement to completion before starting the router's Ookla
+test, then renders both final cards together.
 
 ### First launch and Ookla terms
 

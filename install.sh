@@ -2,7 +2,7 @@
 # Install the Ookla CLI dependency and web interfaces from the signed feed.
 set -eu
 
-version="1.1.5"
+version="1.2.0"
 feed_url="${OOKLA_FEED_URL:-https://keithah.github.io/openwrt-packages}"
 
 fail() {
