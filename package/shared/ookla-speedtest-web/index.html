@@ -16,7 +16,7 @@
       <button data-mode="both">Both</button>
     </div>
     <div class="route" id="route-label">Router → Internet</div>
-    <div class="primary-metrics" id="primary-metrics">
+    <div class="primary-metrics" id="primary-metrics" hidden>
       <div class="primary-metric download-metric">
         <span class="metric-heading"><i aria-hidden="true">↓</i> Download</span>
         <strong id="metric-download">—</strong><small>Mbps</small>
@@ -28,13 +28,13 @@
         <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path id="upload-trace"></path></svg>
       </div>
     </div>
-    <div class="latency-strip" aria-label="Connection responsiveness">
+    <div class="latency-strip" aria-label="Connection responsiveness" hidden>
       <div><span>Ping</span><strong id="metric-ping">—</strong><small>ms</small></div>
       <div><span>Jitter</span><strong id="metric-jitter">—</strong><small>ms</small></div>
       <div><span>Loss</span><strong id="metric-loss">—</strong><small>%</small></div>
     </div>
     <div id="live-gauge" class="gauge" data-phase="idle" data-status="idle">
-      <svg class="gauge-dial" viewBox="0 0 460 390" role="img" aria-labelledby="phase-label gauge-value gauge-unit">
+      <svg id="gauge-dial" class="gauge-dial" viewBox="0 0 460 390" role="img" aria-labelledby="phase-label gauge-value gauge-unit" hidden>
         <path class="gauge-track" d="M107 353 A174 174 0 1 1 353 353"></path>
         <path class="gauge-progress" d="M107 353 A174 174 0 1 1 353 353" pathLength="100"></path>
         <g class="gauge-ticks" aria-hidden="true">
@@ -50,7 +50,7 @@
           <circle cx="230" cy="230" r="9"></circle>
         </g>
       </svg>
-      <div class="gauge-readout">
+      <div id="gauge-readout" class="gauge-readout" hidden>
         <span id="phase-label">Ready</span>
         <strong id="gauge-value">0</strong>
         <small id="gauge-unit">Mbps</small>

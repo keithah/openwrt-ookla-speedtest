@@ -37,6 +37,7 @@ function renderGauge(){
   text(el('metric-download'),metric(state.download));text(el('metric-upload'),metric(state.upload));text(el('metric-ping'),metric(state.ping));text(el('metric-jitter'),metric(state.jitter));text(el('metric-loss'),metric(state.loss));
   el('download-trace').setAttribute('d',SpeedtestGauge.tracePath(state.traces.download,scale));
   el('upload-trace').setAttribute('d',SpeedtestGauge.tracePath(state.traces.upload,scale));
+  var compact=state.status==='idle'||state.status==='done';el('gauge-dial').hidden=compact;el('gauge-readout').hidden=compact;
   el('primary-metrics').hidden=state.status==='idle';document.querySelector('.latency-strip').hidden=state.status==='idle';
   el('go-control').hidden=state.status==='running';el('cancel-test').hidden=state.status!=='running';
   if(state.status==='running'||state.status==='done')announceGauge(phase==='complete'?'Test complete':phase+' '+metric(state.gaugeValue)+' '+(state.gaugeUnit||'Mbps'));

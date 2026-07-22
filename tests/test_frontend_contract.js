@@ -13,6 +13,8 @@ function assertAligned(point,endX,endY,message){const cx=+needle[1],cy=+needle[2
 assertAligned(rotateNeedle(-135),+arc[1],+arc[2],'zero-speed needle must point at the lower-left dial endpoint');
 assertAligned(rotateNeedle(135),+arc[3],+arc[4],'max-speed needle must point at the lower-right dial endpoint');
 assert.match(html,/id=["']live-announcer["'][^>]*aria-live=["']polite["'][^>]*data-throttle-ms=["']\d+["']/);
+assert.match(html,/id=["']primary-metrics["'][^>]*hidden/);assert.match(html,/class=["']latency-strip["'][^>]*hidden/);
+assert.match(html,/id=["']gauge-dial["']/);assert.match(html,/id=["']gauge-readout["']/);
 assert.match(html,/Router\s*→\s*Internet/); assert.match(html,/Device\s*→\s*Router/);
 assert.match(js,/subscribe\s*\(/); assert.match(js,/navigate\s*\(/); assert.match(js,/call\s*\(/); assert.match(js,/textContent/); assert.doesNotMatch(js,/innerHTML/);
 assert.match(js,/function renderGauge\s*\(/); assert.match(js,/SpeedtestGauge\.angleFor/); assert.match(js,/SpeedtestGauge\.tracePath/);
@@ -20,6 +22,8 @@ assert.match(js,/function announceGauge\s*\(/); assert.match(js,/setTimeout\s*\(
 assert.match(js,/router.*internet|internet.*router/i); assert.match(css,/@media/); assert.match(css,/#0?4|navy|cyan/i);
 assert.match(css,/--cyan\s*:/); assert.match(css,/--violet\s*:/); assert.match(css,/:focus-visible/); assert.match(css,/@media\s*\(prefers-reduced-motion:\s*reduce\)/); assert.match(css,/@media\s*\(max-width:\s*640px\)/); assert.match(css,/grid-template-columns:\s*1fr/);
 assert.match(css,/\.gauge\[data-status=["']idle["']\]\s+\.gauge-dial/);
+assert.match(css,/\.gauge\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*520px;/s);assert.match(css,/@supports\s*\(aspect-ratio:/);
+assert.match(css,/\.gauge\[data-status=["']done["']\]/);
 for(const mode of ['router-internet','device-router','both']) assert.match(html,new RegExp(`data-mode=["']${mode}["']`));
 assert.match(js,/local_download/); assert.match(js,/local_upload/); assert.match(js,/Promise\.all/);
 assert.match(js,/size=32768/); assert.doesNotMatch(js,/size=131072/);

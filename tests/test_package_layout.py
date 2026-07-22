@@ -132,6 +132,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         release_workflow = (workflows / "release.yml").read_text()
         for marker in ("push:", "pull_request:", "actions/setup-python@v5", "actions/setup-node@v4",
                        "python3 -m unittest", "tests/test_service_contract.sh", "tests/test_frontend_contract.js",
+                       "tests/test_frontend_render.js",
                        "tests/install-test.sh", "tests/goodcloud-contract-test.sh",
                        "stage", "package/Makefile"):
             self.assertIn(marker, test_workflow)
