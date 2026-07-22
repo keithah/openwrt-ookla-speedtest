@@ -143,6 +143,21 @@ def stop_spawned_worker(child,job_id):
   except OSError: pass
   try: child.wait(timeout=1)
   except Exception: pass
+def file_identity(st): return (st.st_dev,st.st_ino,st.st_mtime_ns,st.st_size)
+def reconcile_stale_job(job_id,snapshot,snapshot_identity,now):
+ held=lock(ignore_starting=True)
+ if held==(None,None) or (isinstance(held,tuple) and held[0]=='storage_error'): return
+ try:
+  path=jobfile(job_id); st=os.stat(path)
+  if file_identity(st)!=snapshot_identity: return
+  current=readjob(job_id)
+  if not current or current.get('job_id')!=job_id or current.get('state') not in ('starting','running'): return
+  if current.get('pid')!=snapshot.get('pid') or now-st.st_mtime<=live_stale_grace(): return
+  if verified_worker_pid(current.get('pid'),job_id): return
+  current.update({'ok':False,'state':'error','phase':'error','finished':int(now),'error':{'code':'worker_exited'}}); writejob(job_id,current)
+  try: os.unlink(startingfile(job_id))
+  except OSError: pass
+ finally: unlock(held)
 def cleanup_live_jobs():
  now=time.time(); ttl=live_ttl()
  try: names=os.listdir(jobsdir)
@@ -151,14 +166,12 @@ def cleanup_live_jobs():
   if not re.fullmatch(r'[0-9a-f]{32}\.json',name): continue
   path=os.path.join(jobsdir,name)
   try:
+   st=os.stat(path)
    with open(path) as f: row=json.load(f)
    terminal=row.get('state') in ('complete','cancelled','error')
-   age=now-os.path.getmtime(path)
+   age=now-st.st_mtime
    if terminal and age>ttl: os.unlink(path)
-   elif row.get('state') in ('starting','running') and age>live_stale_grace() and not verified_worker_pid(row.get('pid'),name[:-5]):
-    row.update({'ok':False,'state':'error','phase':'error','finished':int(now),'error':{'code':'worker_exited'}}); writejob(name[:-5],row)
-    try: os.unlink(startingfile(name[:-5]))
-    except OSError: pass
+   elif row.get('state') in ('starting','running') and age>live_stale_grace(): reconcile_stale_job(name[:-5],row,file_identity(st),now)
   except Exception: pass
  try:
   markers=[name for name in os.listdir(jobsdir) if re.fullmatch(r'[0-9a-f]{32}\.starting',name)]

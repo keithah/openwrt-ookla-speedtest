@@ -613,6 +613,43 @@ for event in events:
         self.assertNotEqual(held, (None, None))
         service.unlock(held)
 
+    def test_cleanup_does_not_overwrite_concurrently_completed_job(self):
+        service = self.load_script("cleanup_race_service", SERVICE)
+        job_id = "1" * 32
+        running = {
+            "ok": True,
+            "job_id": job_id,
+            "state": "running",
+            "phase": "upload",
+            "pid": 999_999_999,
+        }
+        complete = {
+            "ok": True,
+            "job_id": job_id,
+            "state": "complete",
+            "phase": "complete",
+            "finished": int(time.time()),
+            "result": {"server": {"id": 42}},
+        }
+        service.writejob(job_id, running)
+        old = time.time() - 11
+        os.utime(service.jobfile(job_id), (old, old))
+        real_lock = service.lock
+        completed_before_lock = False
+
+        def complete_then_lock(*args, **kwargs):
+            nonlocal completed_before_lock
+            if not completed_before_lock:
+                completed_before_lock = True
+                service.writejob(job_id, complete)
+            return real_lock(*args, **kwargs)
+
+        with mock.patch.object(service, "lock", side_effect=complete_then_lock):
+            service.cleanup_live_jobs()
+
+        self.assertTrue(completed_before_lock)
+        self.assertEqual(service.readjob(job_id), complete)
+
 
 if __name__ == "__main__":
     unittest.main()
