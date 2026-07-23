@@ -1,5 +1,6 @@
 import gzip
 import io
+import re
 import subprocess
 import tarfile
 import tempfile
@@ -8,6 +9,8 @@ from pathlib import Path
 from scripts.build_web_ipks import tar_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
+FRONTEND_ASSETS = ("index.html", "styles.css", "gauge.js", "results.js", "views.js", "app.js")
+FORBIDDEN_SUFFIXES = (".tgz", ".tar.gz", ".pem", ".key")
 
 
 def members(ipk):
@@ -42,12 +45,13 @@ class WebIpkBuilderTests(unittest.TestCase):
             packages = {path.name: members(path) for path in Path(output).glob("*.ipk")}
         self.assertEqual(3, len(packages))
         for name, (control, _, _, _) in packages.items():
-            self.assertIn("Version: 1.2.0-1", control, name)
-        self.assertIn("postinst", packages["luci-app-ookla-speedtest-web_1.2.0-1_all.ipk"][1])
-        luci = packages["luci-app-ookla-speedtest-web_1.2.0-1_all.ipk"][2]
-        glinet = packages["gl-app-ookla-speedtest-web_1.2.0-1_all.ipk"][2]
-        service = packages["ookla-speedtest-webd_1.2.0-1_all.ipk"][2]
-        for filename in ("index.html", "app.js", "gauge.js", "results.js", "views.js", "styles.css"):
+            self.assertIn("Version: 1.3.0-1", control, name)
+            self.assertIn("Architecture: all", control, name)
+        self.assertIn("postinst", packages["luci-app-ookla-speedtest-web_1.3.0-1_all.ipk"][1])
+        luci = packages["luci-app-ookla-speedtest-web_1.3.0-1_all.ipk"][2]
+        glinet = packages["gl-app-ookla-speedtest-web_1.3.0-1_all.ipk"][2]
+        service = packages["ookla-speedtest-webd_1.3.0-1_all.ipk"][2]
+        for filename in FRONTEND_ASSETS:
             self.assertIn("www/luci-static/resources/ookla-speedtest-web/" + filename, luci)
             self.assertIn("www/ookla-speedtest-web/" + filename, glinet)
         self.assertEqual((0o755, True), luci["www/luci-static/resources/ookla-speedtest-web"])
@@ -58,8 +62,15 @@ class WebIpkBuilderTests(unittest.TestCase):
         for name, (_, _, _, files) in packages.items():
             self.assertNotIn("usr/bin/speedtest", files, name)
             for path, payload in files.items():
+                self.assertFalse(path.lower().endswith(FORBIDDEN_SUFFIXES), path)
                 self.assertFalse(payload.startswith((b"\x7fELF", b"MZ")), path)
                 self.assertNotIn(b"speedtest-linux", payload.lower(), path)
+                text = payload.decode(errors="replace")
+                self.assertNotRegex(
+                    text,
+                    re.compile(r"(?:http\.server|serve_forever|socket\.listen|listen\s*\()", re.I),
+                    path,
+                )
 
     def test_complete_ipk_build_is_deterministic(self):
         with tempfile.TemporaryDirectory() as left, tempfile.TemporaryDirectory() as right:
@@ -72,9 +83,9 @@ class WebIpkBuilderTests(unittest.TestCase):
             right_packages = {path.name: path.read_bytes() for path in Path(right).glob("*.ipk")}
         self.assertEqual(
             {
-                "ookla-speedtest-webd_1.2.0-1_all.ipk",
-                "luci-app-ookla-speedtest-web_1.2.0-1_all.ipk",
-                "gl-app-ookla-speedtest-web_1.2.0-1_all.ipk",
+                "ookla-speedtest-webd_1.3.0-1_all.ipk",
+                "luci-app-ookla-speedtest-web_1.3.0-1_all.ipk",
+                "gl-app-ookla-speedtest-web_1.3.0-1_all.ipk",
             },
             set(left_packages),
         )

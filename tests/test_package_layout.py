@@ -30,6 +30,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             "luci-app-ookla-speedtest-web/www/luci-static/resources/view/ookla-speedtest-web/main.js",
             "shared/ookla-speedtest-web/index.html",
             "shared/ookla-speedtest-web/app.js",
+            "shared/ookla-speedtest-web/gauge.js",
             "shared/ookla-speedtest-web/results.js",
             "shared/ookla-speedtest-web/views.js",
             "shared/ookla-speedtest-web/styles.css",
@@ -60,8 +61,8 @@ class PackageLayoutContractTests(unittest.TestCase):
             "gl-app-ookla-speedtest-web",
         ):
             self.assertIn("Package/" + package_name, makefile)
-        self.assertRegex(makefile, r"PKG_VERSION\s*:=")
-        self.assertRegex(makefile, r"PKG_RELEASE\s*:=")
+        self.assertRegex(makefile, r"(?m)^PKG_VERSION:=1\.3\.0$")
+        self.assertRegex(makefile, r"(?m)^PKG_RELEASE:=1$")
         self.assertRegex(makefile, r"PKGARCH\s*:=\s*all")
         self.assertNotRegex(makefile, r"(?i)(wget|curl|https?://|Build/Compile.*download)")
 
@@ -154,6 +155,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         version_match = re.search(r"(?m)^PKG_VERSION:=(\S+)$", makefile)
         self.assertIsNotNone(version_match)
         version = version_match.group(1)
+        self.assertEqual("1.3.0", version)
         html = (PACKAGE / "shared/ookla-speedtest-web/index.html").read_text()
         for asset, attribute in (
             ("styles.css", "href"),
@@ -179,6 +181,11 @@ class PackageLayoutContractTests(unittest.TestCase):
                        "tests/install-test.sh", "tests/goodcloud-contract-test.sh",
                        "stage", "package/Makefile"):
             self.assertIn(marker, test_workflow)
+        for asset in ("gauge.js", "results.js", "views.js", "app.js"):
+            self.assertIn(
+                "node --check package/shared/ookla-speedtest-web/" + asset,
+                test_workflow,
+            )
         for marker in ("workflow_dispatch:", "tags:", "PKG_VERSION", "PKG_RELEASE", "PKGARCH",
                        "deterministic", "forbidden", "gh release create", "contents: write",
                        "tag_name", "GITHUB_REF_NAME", "TAG_INPUT", "inputs.tag_name", "with:"):

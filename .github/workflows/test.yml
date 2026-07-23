@@ -25,6 +25,13 @@ jobs:
         with:
           node-version: "20.x"
 
+      - name: Frontend syntax
+        run: |
+          node --check package/shared/ookla-speedtest-web/gauge.js
+          node --check package/shared/ookla-speedtest-web/results.js
+          node --check package/shared/ookla-speedtest-web/views.js
+          node --check package/shared/ookla-speedtest-web/app.js
+
       - name: Python contract tests
         run: python3 -m unittest discover -s tests -v
 
