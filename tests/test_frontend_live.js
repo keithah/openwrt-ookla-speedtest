@@ -234,6 +234,35 @@ async function testPollingPausesWhileHidden() {
   assert.deepEqual(h.calls.filter(call => call.method === 'live_status').map(call => call.at), [0, 1100]);
 }
 
+async function testCancelWhileHiddenDoesNotPollAgain() {
+  const cancellation = deferred();
+  let polls = 0;
+  const h = harness((method, params) => {
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'hidden-cancel-job' });
+    if (method === 'live_status') {
+      polls++;
+      return Promise.resolve(status('hidden-cancel-job', { phase: 'download', progress: 0.2, download_mbps: 25 }));
+    }
+    if (method === 'cancel_live') return cancellation.promise;
+    throw new Error('unexpected ' + method);
+  });
+  const run = h.app.internetTest().then(() => null, error => error);
+  await flush();
+  h.document.visibilityState = 'hidden';
+  await h.timers.tick(100);
+  assert.equal(polls, 1, 'polling is blocked while the page is hidden');
+
+  const cancel = h.app.cancelTest();
+  await flush();
+  assert.equal(h.app.state.status, 'cancelling');
+  assert.equal(polls, 1, 'waking the visibility wait for cancellation must not issue another status request');
+
+  cancellation.resolve({ ok: true, job_id: 'hidden-cancel-job', state: 'cancelled' });
+  await cancel;
+  const error = await run;
+  assert.equal(error.code, 'cancelled');
+}
+
 async function testStaleResponsesAreIgnored() {
   const h = harness(() => Promise.resolve({}));
   h.app.state.activeJob = 'new-job';
@@ -327,6 +356,46 @@ async function testHistoryRefreshFailureDoesNotRewriteCompletedMeasurement() {
   assert.equal(h.app.state.phase, 'complete');
   assert.equal(h.app.state.results.internet.download_mbps, 144);
   assert.equal(h.app.state.errorCode, null, 'best-effort history refresh is not a measurement error');
+}
+
+async function testDeleteHistoryActionRefreshesRenderedHistory() {
+  const refreshed = [{ id: 'kept', date: 'Today', kind: 'router-internet', outcome: 'success', download_mbps: 50 }];
+  const h = harness(method => {
+    if (method === 'delete_history') return Promise.resolve({ ok: true, deleted: 1 });
+    if (method === 'history') return Promise.resolve({ ok: true, items: refreshed });
+    throw new Error('unexpected ' + method);
+  });
+  h.app.state.view = 'history';
+  h.app.state.history = [
+    { id: 'removed', date: 'Yesterday', kind: 'device-router', outcome: 'success', download_mbps: 10 },
+    refreshed[0]
+  ];
+  h.app.render();
+  const table = h.nodes.view.children[1].children[0];
+  const deleteButton = table.children[1].children[6].children[1];
+
+  await deleteButton.onclick();
+
+  assert.deepEqual(Array.from(h.app.state.history), refreshed);
+  assert.doesNotMatch(nodeText(h.nodes.view), /Yesterday/);
+  assert.match(nodeText(h.nodes.view), /50 Mbps/);
+}
+
+async function testClearHistoryActionRefreshesRenderedHistory() {
+  const h = harness(method => {
+    if (method === 'clear_history') return Promise.resolve({ ok: true, cleared: 1 });
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    throw new Error('unexpected ' + method);
+  });
+  h.app.state.view = 'history';
+  h.app.state.history = [{ id: 'cleared', date: 'Today', kind: 'router-internet', outcome: 'success', download_mbps: 75 }];
+  h.app.render();
+  const clearButton = h.nodes.view.children[2];
+
+  await clearButton.onclick();
+
+  assert.deepEqual(Array.from(h.app.state.history), []);
+  assert.doesNotMatch(nodeText(h.nodes.view), /75 Mbps/);
 }
 
 async function testTermsAcceptanceResumesLiveRun() {
@@ -1242,6 +1311,9 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testRunningStartingPhaseNormalizesBeforeProgress();
   await testRunModeUsesTermsServerLiveAndHistory();
   await testHistoryRefreshFailureDoesNotRewriteCompletedMeasurement();
+  await testDeleteHistoryActionRefreshesRenderedHistory();
+  await testClearHistoryActionRefreshesRenderedHistory();
+  await testCancelWhileHiddenDoesNotPollAgain();
   await testTermsAcceptanceResumesLiveRun();
   await testDeviceRouterKeepsLocalBridge();
   await testCancelDuringLocalStopsAfterInflightBatch();
