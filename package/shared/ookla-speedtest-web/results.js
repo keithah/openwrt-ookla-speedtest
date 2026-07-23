@@ -20,6 +20,12 @@
     return input == null || input === '' ? '—' : String(input);
   }
 
+  function numericLatency(flattened, latency) {
+    if (typeof flattened === 'number' && isFinite(flattened)) return flattened;
+    if (typeof latency === 'number' && isFinite(latency)) return latency;
+    if (latency && typeof latency.iqm === 'number' && isFinite(latency.iqm)) return latency.iqm;
+  }
+
   function line(doc, container, label, input, unit, optional) {
     if (optional && input == null) return;
     var node = doc.createElement('p');
@@ -61,9 +67,9 @@
       return section;
     }
     var ping = result.ping || {}, download = result.download || {}, upload = result.upload || {};
-    line(doc, section, 'Idle latency', result.idle_latency_ms != null ? result.idle_latency_ms : ping.latency, 'ms', true);
-    line(doc, section, 'Download latency', result.download_latency_ms != null ? result.download_latency_ms : download.latency, 'ms', true);
-    line(doc, section, 'Upload latency', result.upload_latency_ms != null ? result.upload_latency_ms : upload.latency, 'ms', true);
+    line(doc, section, 'Idle latency', numericLatency(result.idle_latency_ms, ping.latency), 'ms', true);
+    line(doc, section, 'Download latency', numericLatency(result.download_latency_ms, download.latency), 'ms', true);
+    line(doc, section, 'Upload latency', numericLatency(result.upload_latency_ms, upload.latency), 'ms', true);
     line(doc, section, 'Jitter', result.jitter_ms != null ? result.jitter_ms : ping.jitter, 'ms', true);
     line(doc, section, 'Loss', result.loss_percent != null ? result.loss_percent : result.packetLoss, '%', true);
     detail(doc, section, 'ISP', [result.isp]);

@@ -85,6 +85,20 @@ assert.match(nodes.results.className, /final-result/);
 Results.render(nodes.results, 'device-router', { local: { download_mbps: 12, ping_ms: 3 } });
 assert.match(nodeText(nodes.results), /Upload — Mbps/);
 
+Results.render(nodes.results, 'router-internet', {
+  internet: {
+    download_mbps: 296.7, upload_mbps: 95, ping_ms: 11.554,
+    ping: { latency: 11.554 },
+    download: { latency: { iqm: 27.932 } },
+    upload: { latency: { iqm: 39.411 } }
+  }
+});
+const nestedLatencyResults = nodeText(nodes.results);
+assert.match(nestedLatencyResults, /Idle latency 11\.554 ms/);
+assert.match(nestedLatencyResults, /Download latency 27\.932 ms/);
+assert.match(nestedLatencyResults, /Upload latency 39\.411 ms/);
+assert.doesNotMatch(nestedLatencyResults, /\[object Object\]/);
+
 let opened = null;
 Views.render(nodes.view, 'history', {
   history: [
