@@ -5,6 +5,8 @@ const assert = require('assert');
 
 const root = path.join(__dirname, '..', 'package', 'shared', 'ookla-speedtest-web');
 const SpeedtestGauge = require(path.join(root, 'gauge.js'));
+const SpeedtestResults = require(path.join(root, 'results.js'));
+const SpeedtestViews = require(path.join(root, 'views.js'));
 
 class FakeNode {
   constructor() {
@@ -51,7 +53,7 @@ class FakeTimers {
 }
 
 async function flush() {
-  for (let i = 0; i < 8; i++) await Promise.resolve();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
 async function flushUntil(predicate) {
@@ -59,7 +61,7 @@ async function flushUntil(predicate) {
 }
 
 function harness(handler, options) {
-  const ids = ['live-gauge', 'gauge-dial', 'gauge-readout', 'gauge-needle', 'gauge-value', 'gauge-unit',
+  const ids = ['live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-needle', 'gauge-value', 'gauge-unit',
     'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
     'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
     'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
@@ -70,25 +72,40 @@ function harness(handler, options) {
   nodes['live-announcer'].setAttribute('data-throttle-ms', '1000');
   const latency = new FakeNode();
   const scaleLabels = Array.from({ length: 5 }, () => new FakeNode());
-  let ready;
+  let ready, rafId = 0;
+  const rafs = new Map(), documentListeners = {};
   const document = {
-    addEventListener(name, fn) { if (name === 'DOMContentLoaded') ready = fn; },
+    visibilityState: 'visible',
+    addEventListener(name, fn) { if (name === 'DOMContentLoaded') ready = fn; else documentListeners[name] = fn; },
+    removeEventListener(name, fn) { if (documentListeners[name] === fn) delete documentListeners[name]; },
+    dispatchEvent(event) { const fn = documentListeners[event.type]; if (fn) fn(event); },
     createElement() { return new FakeNode(); },
     createTextNode(value) { const node = new FakeNode(); node.textContent = value; return node; },
     getElementById(id) { return nodes[id] || null; },
     querySelector(selector) { return selector === '.latency-strip' ? latency : null; },
     querySelectorAll(selector) { return selector === '[data-gauge-scale]' ? scaleLabels : selector === '[data-mode]' ? modeButtons : []; }
   };
+  Object.values(nodes).forEach(node => { node.ownerDocument = document; });
   const timers = new FakeTimers();
   const calls = [];
   const adapter = { call(method, params) { calls.push({ method, params, at: timers.now }); return handler(method, params, calls, timers); } };
-  const window = { SpeedtestWebAdapter: adapter, SpeedtestWebLocalConfig: options && options.local };
+  const window = {
+    SpeedtestWebAdapter: adapter,
+    SpeedtestWebLocalConfig: options && options.local,
+    requestAnimationFrame(callback) { rafs.set(++rafId, callback); return rafId; },
+    cancelAnimationFrame(id) { rafs.delete(id); },
+    matchMedia() { return { matches: !!(options && options.reducedMotion), addEventListener() {} }; }
+  };
   const FakeDate = { now: () => timers.now };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), {
-    window, document, SpeedtestGauge, Promise, performance: { now: () => timers.now }, Date: FakeDate,
+    window, document, SpeedtestGauge, SpeedtestResults, SpeedtestViews, Promise, performance: { now: () => timers.now }, Date: FakeDate,
+    requestAnimationFrame: window.requestAnimationFrame, cancelAnimationFrame: window.cancelAnimationFrame,
     setTimeout: timers.setTimeout.bind(timers), clearTimeout: timers.clearTimeout.bind(timers)
   });
-  return { app: window.SpeedtestWeb, calls, document, nodes, modeButtons, ready, timers };
+  return {
+    app: window.SpeedtestWeb, calls, document, nodes, modeButtons, ready, timers,
+    stepFrame(at) { const callbacks = [...rafs.values()]; rafs.clear(); callbacks.forEach(fn => fn(at)); }
+  };
 }
 
 function status(job, fields) {
@@ -134,17 +151,15 @@ async function testLiveSamplesReachComplete() {
   assert.equal(h.app.state.phase, 'ping');
   assert.equal(h.nodes['live-gauge'].attributes['data-phase'], 'ping');
   assert.equal(h.nodes['phase-label'].textContent, 'Ping');
-  assert.equal(h.nodes['gauge-needle'].style.transform, 'rotate(-110.025deg)');
-  await h.timers.tick(500);
+  await h.timers.tick(100);
   assert.equal(h.app.state.phase, 'download');
   assert.deepEqual(Array.from(h.app.state.traces.download), [80, 120]);
   assert.notEqual(h.nodes['download-trace'].attributes.d, '');
-  const downloadNeedle = h.nodes['gauge-needle'].style.transform;
-  await h.timers.tick(500);
+  await h.timers.tick(100);
   assert.equal(h.app.state.phase, 'upload');
   assert.deepEqual(Array.from(h.app.state.traces.upload), [31]);
-  assert.notEqual(h.nodes['gauge-needle'].style.transform, downloadNeedle);
-  await h.timers.tick(500);
+  assert.deepEqual(h.calls.filter(call => call.method === 'live_status').slice(0, 3).map(call => call.at), [0, 100, 200]);
+  await h.timers.tick(100);
   const result = await promise;
   assert.equal(h.app.state.phase, 'complete');
   assert.equal(h.app.state.status, 'done');
@@ -167,7 +182,7 @@ async function testResultEventWaitsForEnrichedTerminalState() {
   await flush();
   assert.equal(h.app.state.phase, 'complete');
   assert.equal(h.app.state.status, 'running', 'a JSONL result event is not the worker terminal state');
-  await h.timers.tick(500);
+  await h.timers.tick(100);
   const result = await pending;
   assert.equal(result.network_context.note, 'Tailscale exit node');
   assert.equal(h.calls.filter(call => call.method === 'live_status').length, 2);
@@ -184,19 +199,39 @@ async function testCadenceAndRetries() {
   const rejected = h.app.internetTest().then(() => null, error => error);
   await flush();
   assert.equal(h.calls.filter(call => call.method === 'live_status')[0].at, 0);
-  await h.timers.tick(500);
+  await h.timers.tick(100);
   await h.timers.tick(500);
   await h.timers.tick(1000);
   await h.timers.tick(2000);
   const error = await rejected;
   assert.equal(error.message, 'transport');
-  assert.deepEqual(h.calls.filter(call => call.method === 'live_status').map(call => call.at), [0, 500, 1000, 2000, 4000]);
+  assert.deepEqual(h.calls.filter(call => call.method === 'live_status').map(call => call.at), [0, 100, 600, 1600, 3600]);
   assert.equal(h.app.state.download, 55, 'transport failures preserve the last real sample');
   assert.deepEqual(Array.from(h.app.state.traces.download), [55]);
   assert.equal(h.app.state.failedPhase, 'download');
   assert.match(h.nodes['error-message'].textContent, /Router → Internet download failed/);
   assert.equal(h.app.state.pollFailures, 4);
   assert.equal(h.app.state.status, 'error');
+}
+
+async function testPollingPausesWhileHidden() {
+  const responses = [
+    { ok: true, job_id: 'visibility-job' },
+    status('visibility-job', { phase: 'ping', ping_ms: 8 }),
+    complete('visibility-job', 100)
+  ];
+  const h = harness(() => Promise.resolve(responses.shift()));
+  const pending = h.app.internetTest();
+  await flush();
+  h.document.visibilityState = 'hidden';
+  h.document.dispatchEvent({ type: 'visibilitychange' });
+  await h.timers.tick(1000);
+  assert.deepEqual(h.calls.filter(call => call.method === 'live_status').map(call => call.at), [0]);
+  h.document.visibilityState = 'visible';
+  h.document.dispatchEvent({ type: 'visibilitychange' });
+  await h.timers.tick(100);
+  await pending;
+  assert.deepEqual(h.calls.filter(call => call.method === 'live_status').map(call => call.at), [0, 1100]);
 }
 
 async function testStaleResponsesAreIgnored() {
@@ -254,7 +289,7 @@ async function testRunningStartingPhaseNormalizesBeforeProgress() {
   assert.equal(h.app.state.status, 'running');
   assert.equal(h.app.state.phase, 'ping');
   assert.equal(h.nodes['live-gauge'].attributes['data-phase'], 'ping');
-  await h.timers.tick(500);
+  await h.timers.tick(100);
   assert.equal(h.app.state.phase, 'download');
   await h.timers.tick(500);
   await run;
@@ -690,6 +725,7 @@ async function testLocalMeasurementUsesFullWindowAndCumulativeElapsed() {
 }
 
 async function testBothRunsLocalThenInternetAndKeepsSeparateResults() {
+  const internetStart = deferred();
   const h = harness((method, params, calls) => {
     if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
     if (method === 'begin_local') return Promise.resolve({ ok: true, run_id: '66666666666666666666666666666666', state: 'active' });
@@ -698,13 +734,19 @@ async function testBothRunsLocalThenInternetAndKeepsSeparateResults() {
     if (method === 'record_local') return Promise.resolve({ ok: true, run_id: params.run_id, state: 'committed', item: { id: params.run_id } });
     if (method === 'start_live') {
       assert.equal(calls.filter(call => call.method === 'record_local').length, 1, 'internet starts only after local recording completes');
-      return Promise.resolve({ ok: true, job_id: 'both-job' });
+      return internetStart.promise;
     }
     if (method === 'live_status') return Promise.resolve(complete('both-job', 180));
     if (method === 'history') return Promise.resolve({ ok: true, items: [] });
     throw new Error('unexpected ' + method);
   }, { local: { measurementMs: 3000, maxBatches: 2 } });
-  await h.app.runMode('both');
+  const run = h.app.runMode('both');
+  await flushUntil(() => h.calls.some(call => call.method === 'start_live'));
+  assert.equal(h.app.state.results.local.kind, 'device-router', 'internet reset retains the completed local result');
+  assert.match(h.nodes.status.textContent, /Device → Router complete\. Starting Router → Internet/);
+  assert.match(nodeText(h.nodes.results), /Device → Router/);
+  internetStart.resolve({ ok: true, job_id: 'both-job' });
+  await run;
   const recordIndex = h.calls.findIndex(call => call.method === 'record_local');
   const startIndex = h.calls.findIndex(call => call.method === 'start_live');
   assert.ok(recordIndex >= 0 && startIndex > recordIndex);
@@ -748,7 +790,7 @@ async function testCompletedResultsRenderPathMetadataAndModeScope() {
   assert.equal(h.nodes.results.children.length, 2);
   assert.match(nodeText(h.nodes.results.children[0]), /Device → Router/);
   const internet = nodeText(h.nodes.results.children[1]);
-  for (const expected of ['Router → Internet', 'Jitter 1.4 ms', 'Loss 0 %', 'West Coast', 'Example ISP', 'wan', 'Direct connection']) assert.match(internet, new RegExp(expected));
+  for (const expected of ['Router → Internet', 'Jitter 1.4 ms', 'Loss 0 %', 'West Coast', 'Example ISP', 'wan', 'direct WAN path']) assert.match(internet, new RegExp(expected));
   h.app.state.mode = 'device-router';
   h.app.render();
   assert.equal(h.nodes.results.children.length, 1);
@@ -768,7 +810,7 @@ async function testTerminalInternetErrorsPreservePhaseAndLastSample() {
     const h = harness(() => Promise.resolve(responses.shift()));
     const run = h.app.runMode('router-internet');
     await flush();
-    for (let i = 0; i < testCase.samples.length; i++) await h.timers.tick(500);
+    for (let i = 0; i < testCase.samples.length; i++) await h.timers.tick(100);
     await run;
     assert.equal(h.app.state.status, 'error');
     assert.equal(h.app.state.failedPhase, testCase.phase);
@@ -1193,6 +1235,7 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testLiveSamplesReachComplete();
   await testResultEventWaitsForEnrichedTerminalState();
   await testCadenceAndRetries();
+  await testPollingPausesWhileHidden();
   await testStaleResponsesAreIgnored();
   await testCancelIsImmediateAndSingleShot();
   await testMalformedBackendStateIsStableError();

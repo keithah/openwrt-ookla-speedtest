@@ -25,25 +25,30 @@ class FakeNode {
   hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name); }
   getAttribute(name) { return this.attributes[name] || null; }
   click() { if (this.onclick) return this.onclick(); }
+  addEventListener(name, fn) { this['on' + name] = fn; }
 }
 
-const ids = ['live-gauge', 'gauge-dial', 'gauge-readout', 'gauge-needle', 'gauge-value', 'gauge-unit',
+const ids = ['live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-needle', 'gauge-value', 'gauge-unit',
   'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
   'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
   'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
-  'server-detail', 'results', 'view', 'phase-announcer', 'error-message', 'retry-test'];
+  'server-detail', 'results', 'view', 'phase-announcer', 'error-message', 'retry-test', 'terms-dialog',
+  'accept-terms', 'server-picker', 'server-panel', 'server-search', 'server-results'];
 const nodes = Object.fromEntries(ids.map(id => [id, new FakeNode()]));
 nodes['gauge-dial'].setAttribute('hidden', '');
 nodes['live-announcer'].setAttribute('data-throttle-ms', '1000');
 const latency = new FakeNode();
-const scaleLabels = Array.from({ length: 5 }, () => new FakeNode());
+let ready, rafId = 0, reducedMotion = false;
+const rafs = new Map();
 const document = {
-  addEventListener() {},
+  visibilityState: 'visible',
+  addEventListener(name, fn) { if (name === 'DOMContentLoaded') ready = fn; },
+  removeEventListener() {},
   createElement() { return new FakeNode(); },
   createTextNode(value) { const node = new FakeNode(); node.textContent = value; return node; },
   getElementById(id) { return nodes[id] || null; },
   querySelector(selector) { return selector === '.latency-strip' ? latency : null; },
-  querySelectorAll(selector) { return selector === '[data-gauge-scale]' ? scaleLabels : []; }
+  querySelectorAll() { return []; }
 };
 Object.values(nodes).forEach(node => { node.ownerDocument = document; });
 function nodeText(node) {
@@ -141,12 +146,21 @@ for (const expected of ['Server preference', 'San Jose', 'Retention', '50', 'Dis
 Views.render(nodes.view, 'about', {}, {});
 assert.equal(nodeText(nodes.view).replace(/^About\s+/, ''),
   "OpenWrt Ookla Speedtest (Unofficial) runs Router → Internet tests on the router through the separately installed Ookla CLI. The web packages do not contain the Ookla binary. Device → Router measures this browser's authenticated path to the router, not the public internet. GoodCloud opens this same authenticated router interface; the package does not expose another public service.");
-const window = {};
+const window = {
+  requestAnimationFrame(callback) { rafs.set(++rafId, callback); return rafId; },
+  cancelAnimationFrame(id) { rafs.delete(id); },
+  matchMedia() { return { matches: reducedMotion, addEventListener() {} }; }
+};
 vm.runInNewContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), {
-  window, document, SpeedtestGauge, Promise, performance: { now: () => 0 }, Date, setTimeout, clearTimeout
+  window, document, SpeedtestGauge, SpeedtestResults: Results, SpeedtestViews: Views, Promise,
+  performance: { now: () => frameNow }, Date, setTimeout, clearTimeout,
+  requestAnimationFrame: window.requestAnimationFrame, cancelAnimationFrame: window.cancelAnimationFrame
 });
 
 const app = window.SpeedtestWeb;
+let frameNow = 0;
+function stepFrame(at) { frameNow = at; const callbacks = [...rafs.values()]; rafs.clear(); callbacks.forEach(fn => fn(at)); }
+ready();
 app.render();
 assert.equal(nodes['gauge-dial'].hidden, true, 'idle hides the full dial');
 assert.equal(nodes['gauge-readout'].hidden, true, 'idle hides the live readout');
@@ -155,6 +169,7 @@ assert.equal(nodes['cancel-test'].hidden, true, 'idle hides cancel');
 assert.equal(nodes['primary-metrics'].hidden, true, 'idle hides throughput metrics');
 assert.equal(latency.hidden, true, 'idle hides latency metrics');
 assert.equal(nodes['phase-label'].textContent, 'Ready');
+assert.equal(nodes['live-gauge'].attributes['data-shape'], 'disc');
 
 Object.assign(app.state, { status: 'preparing', phase: 'preparing' });
 app.render();
@@ -163,9 +178,10 @@ assert.equal(nodes['go-control'].hidden, true);
 assert.equal(nodes['cancel-test'].hidden, true);
 assert.equal(nodes['live-gauge'].attributes['aria-busy'], 'true');
 assert.equal(nodes.status.textContent, 'Preparing…');
+assert.equal(nodes['live-gauge'].attributes['data-shape'], 'ring');
 
 Object.assign(app.state, {
-  status: 'running', phase: 'download', progress: 25, gaugeValue: 50, gaugeUnit: 'Mbps', gaugeScale: 200,
+  status: 'running', phase: 'download', progress: 25, gaugeValue: 50, gaugeUnit: 'Mbps',
   download: 50.25, upload: null, ping: 8.4, jitter: 1.2, loss: 0,
   traces: { download: [10, 30, 50], upload: [] }
 });
@@ -184,20 +200,41 @@ assert.equal(nodes['live-gauge'].attributes['aria-busy'], 'true');
 assert.equal(nodes['gauge-value'].textContent, '50');
 assert.equal(nodes['metric-download'].textContent, '50.25');
 assert.equal(nodes['metric-ping'].textContent, '8.4');
-assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 200));
+assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 1000));
 assert.equal(nodes['upload-trace'].attributes.d, '');
-assert.deepEqual(scaleLabels.map(node => node.textContent), ['0', '50', '100', '150', '200']);
-assert.equal(nodes['gauge-needle'].style.transform, 'rotate(-33.75deg)');
+assert.deepEqual(nodes['gauge-labels'].children.map(node => node.textContent), SpeedtestGauge.labelsFor('download').map(String));
+assert.equal(nodes['gauge-needle'].style.transform, 'rotate(-135deg)', 'render alone does not invent a needle sample');
+assert.equal(nodes['live-gauge'].attributes['data-shape'], 'arc');
+assert.equal(nodes['metric-download'].attributes['aria-current'], 'true');
 assert.equal(nodes['live-gauge'].style.values['--gauge-progress'], '25');
 
-Object.assign(app.state, { phase: 'upload', progress: 60, gaugeValue: 100, upload: 42.75, traces: { download: [10, 30, 50], upload: [20, 42.75] } });
+app.applyLocalSample('download', 50);
+assert.equal(nodes['gauge-needle'].style.transform, 'rotate(-135deg)', 'a real sample does not jump instantly');
+stepFrame(100);
+const halfwayAngle = parseFloat(nodes['gauge-needle'].style.transform.slice(7));
+assert.ok(halfwayAngle > -135 && halfwayAngle < SpeedtestGauge.angleFor(50, 'download'));
+stepFrame(200);
+assert.equal(nodes['gauge-needle'].style.transform, 'rotate(' + SpeedtestGauge.angleFor(50, 'download') + 'deg)');
+
+app.applyLocalSample('download', 100);
+stepFrame(250);
+const retargetedAngle = parseFloat(nodes['gauge-needle'].style.transform.slice(7));
+assert.ok(retargetedAngle > SpeedtestGauge.angleFor(50, 'download'), 'retarget starts from the displayed angle');
+
+Object.assign(app.state, { phase: 'upload', progress: 60, gaugeValue: 100, upload: 42.75, traces: { download: [10, 30, 50], upload: [20] } });
 app.render();
+app.applyLocalSample('upload', 42.75);
 assert.equal(nodes['live-gauge'].attributes['data-phase'], 'upload');
 assert.equal(nodes['phase-label'].textContent, 'Upload');
 assert.equal(nodes['phase-announcer'].textContent, 'Upload phase');
 assert.equal(nodes['metric-upload'].textContent, '42.75');
-assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 200));
-assert.equal(nodes['gauge-needle'].style.transform, 'rotate(0deg)');
+assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 1000));
+stepFrame(750);
+assert.equal(nodes['gauge-needle'].style.transform, 'rotate(-135deg)', 'phase change resets over 500 ms');
+stepFrame(950);
+assert.equal(nodes['gauge-needle'].style.transform, 'rotate(' + SpeedtestGauge.angleFor(42.75, 'upload') + 'deg)', 'newest phase sample retargets after reset');
+assert.equal(nodes['metric-download'].attributes['aria-current'], undefined, 'completed metric remains visible but inactive');
+assert.equal(nodes['metric-upload'].attributes['aria-current'], 'true');
 
 Object.assign(app.state, { status: 'done', phase: 'complete', progress: 100 });
 app.render();
@@ -209,10 +246,10 @@ assert.equal(nodes['go-control'].hidden, false, 'complete restores GO');
 assert.equal(nodes['cancel-test'].hidden, true, 'complete hides cancel');
 assert.equal(nodes['primary-metrics'].hidden, false, 'complete retains throughput metrics');
 assert.equal(latency.hidden, false, 'complete retains latency metrics');
-assert.equal(nodes['metric-download'].textContent, '50.25');
+assert.equal(nodes['metric-download'].textContent, '100');
 assert.equal(nodes['metric-upload'].textContent, '42.75');
-assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 200));
-assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 200));
+assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 1000));
+assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 1000));
 assert.equal(nodes['phase-label'].textContent, 'Complete');
 assert.equal(nodes['phase-announcer'].textContent, 'Test complete');
 assert.equal(nodes['live-gauge'].attributes['aria-busy'], 'false');
@@ -225,5 +262,11 @@ assert.match(nodes['error-message'].textContent, /download failed/);
 assert.match(nodes['error-message'].textContent, /network_timeout/);
 assert.match(nodes['phase-announcer'].textContent, /Router → Internet download failed/);
 assert.equal(nodes['retry-test'].hidden, false);
+
+reducedMotion = true;
+Object.assign(app.state, { status: 'running', phase: 'download' });
+app.render();
+app.applyLocalSample('download', 250);
+assert.equal(nodes['gauge-needle'].style.transform, 'rotate(' + SpeedtestGauge.angleFor(250, 'download') + 'deg)', 'reduced motion jumps immediately');
 
 console.log('frontend render ok');
