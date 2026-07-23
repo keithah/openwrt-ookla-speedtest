@@ -883,7 +883,6 @@ class LocalRunLifecycleTests(unittest.TestCase):
             os.environ,
             OOKLA_WEBD_RUN_DIR=str(self.run_dir),
             OOKLA_WEBD_HISTORY=str(self.history),
-            OOKLA_HISTORY_RETENTION="2",
             OOKLA_LOCAL_RUN_LEASE="15",
             OOKLA_LOCAL_RUN_TTL="600",
         )
@@ -1034,7 +1033,7 @@ class LocalRunLifecycleTests(unittest.TestCase):
         self.assertTrue(self.rpc("cancel_local", run_id=run_id)["ok"])
 
     def test_record_before_cancel_commits_once_and_cancel_is_too_late(self):
-        self.prefill_full_history()
+        original = self.prefill_full_history()
         run_id = self.rpc("begin_local")["run_id"]
 
         first = self.rpc("record_local", **self.local_values(run_id))
@@ -1047,7 +1046,7 @@ class LocalRunLifecycleTests(unittest.TestCase):
         self.assertEqual(cancelled["error"]["code"], "too_late")
         self.assertEqual(cancelled["state"], "committed")
         rows = self.history_rows()
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), len(original) + 1)
         self.assertEqual([row["id"] for row in rows].count(run_id), 1)
 
     def test_history_commit_repairs_active_marker_after_power_loss(self):
