@@ -21,7 +21,7 @@ class FakeNode {
   }
   addEventListener(name, fn) { this.listeners[name] = fn; }
   click() { if (!this.disabled && this.listeners.click) return this.listeners.click.call(this); }
-  focus() { if (this.ownerDocument) this.ownerDocument.activeElement = this; }
+  focus() { if (this.ownerDocument) { this.ownerDocument.activeElement = this; this.ownerDocument.dispatchEvent({ type: 'focusin', target: this }); } }
   appendChild(node) { this.children.push(node); return node; }
   removeChild(node) { this.children.splice(this.children.indexOf(node), 1); }
   get firstChild() { return this.children[0] || null; }
@@ -71,6 +71,7 @@ function harness(handler, options) {
     'server-search', 'server-results', 'phase-announcer', 'error-message', 'retry-test', 'terms-title'];
   const nodes = Object.fromEntries(ids.map(id => [id, new FakeNode()]));
   const modeButtons = ['router-internet', 'device-router', 'both'].map(mode => { const node = new FakeNode(); node.setAttribute('data-mode', mode); return node; });
+  const viewButtons = ['home', 'history', 'analytics', 'settings', 'about'].map(view => { const node = new FakeNode(); node.setAttribute('data-view', view); return node; });
   nodes['live-announcer'].setAttribute('data-throttle-ms', '1000');
   const latency = new FakeNode();
   const scaleLabels = Array.from({ length: 5 }, () => new FakeNode());
@@ -86,7 +87,7 @@ function harness(handler, options) {
     createTextNode(value) { const node = new FakeNode(); node.ownerDocument = document; node.textContent = value; return node; },
     getElementById(id) { return nodes[id] || null; },
     querySelector(selector) { return selector === '.latency-strip' ? latency : null; },
-    querySelectorAll(selector) { return selector === '[data-gauge-scale]' ? scaleLabels : selector === '[data-mode]' ? modeButtons : []; }
+    querySelectorAll(selector) { return selector === '[data-gauge-scale]' ? scaleLabels : selector === '[data-mode]' ? modeButtons : selector === '[data-view]' ? viewButtons : []; }
   };
   Object.values(nodes).forEach(node => { node.ownerDocument = document; });
   const timers = new FakeTimers();
@@ -106,7 +107,7 @@ function harness(handler, options) {
     setTimeout: timers.setTimeout.bind(timers), clearTimeout: timers.clearTimeout.bind(timers)
   });
   return {
-    app: window.SpeedtestWeb, calls, document, nodes, modeButtons, ready, timers,
+    app: window.SpeedtestWeb, calls, document, nodes, modeButtons, viewButtons, ready, timers,
     stepFrame(at) { const callbacks = [...rafs.values()]; rafs.clear(); callbacks.forEach(fn => fn(at)); }
   };
 }
@@ -486,6 +487,28 @@ async function testCancellingTermsRestoresGoAndLeavesLocalAvailable() {
   await h.app.runMode('device-router');
   assert.equal(h.calls.some(call => call.method === 'begin_local'), true, 'local testing remains available without internet terms');
   assert.equal(h.calls.some(call => call.method === 'start_live'), false);
+}
+
+async function testTermsRestoreOriginalInvokerAfterPendingSettingsIntervention() {
+  const settings = deferred();
+  let settingsCalls = 0;
+  const h = harness(method => {
+    if (method === 'settings') return ++settingsCalls === 1
+      ? Promise.resolve({ ok: true, terms_accepted: true })
+      : settings.promise;
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    throw new Error('unexpected ' + method);
+  });
+  h.ready(); await flush();
+  h.nodes['go-control'].focus();
+  const run = h.nodes['go-control'].click();
+  h.viewButtons[1].click();
+  h.nodes['server-picker'].focus();
+  settings.resolve({ ok: true, terms_accepted: false });
+  await run;
+  assert.equal(h.nodes['terms-dialog'].open, true);
+  h.nodes['terms-dialog'].close('cancel');
+  assert.equal(h.document.activeElement, h.nodes['go-control'], 'terms restores the control that began the async run');
 }
 
 async function testDeviceRouterKeepsLocalBridge() {
@@ -1535,6 +1558,59 @@ async function testSelectedServerStartsLiveAndCompletionFocusesResult() {
   assert.equal(h.nodes['go-control'].attributes['aria-label'], 'Run Router to Internet test again');
 }
 
+async function testDeferredCompletionHistoryDoesNotStealFocusFromRetest() {
+  const completedHistory = deferred(), nextSettings = deferred();
+  let settingsCalls = 0, historyCalls = 0;
+  const h = harness(method => {
+    if (method === 'settings') return ++settingsCalls === 1
+      ? Promise.resolve({ ok: true, terms_accepted: true })
+      : settingsCalls === 2
+        ? Promise.resolve({ ok: true, terms_accepted: true })
+        : nextSettings.promise;
+    if (method === 'history') return ++historyCalls === 1
+      ? Promise.resolve({ ok: true, items: [] })
+      : completedHistory.promise;
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'focus-old' });
+    if (method === 'live_status') return Promise.resolve(complete('focus-old', 210));
+    throw new Error('unexpected ' + method);
+  });
+  h.ready(); await flush();
+  const completedRun = h.nodes['go-control'].click();
+  await flushUntil(() => historyCalls === 2);
+  h.nodes['go-control'].focus();
+  const retest = h.nodes['go-control'].click();
+  await flush();
+  assert.equal(h.app.state.status, 'preparing');
+  completedHistory.resolve({ ok: true, items: [] });
+  await completedRun;
+  assert.equal(h.document.activeElement, h.nodes['go-control'], 'the completed run cannot focus results after a retest starts');
+  nextSettings.resolve({ ok: true, terms_accepted: false });
+  await retest;
+}
+
+async function testDeferredCompletionHistoryDoesNotStealNavigationFocus() {
+  const completedHistory = deferred();
+  let historyCalls = 0;
+  const h = harness(method => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'history') return ++historyCalls === 1
+      ? Promise.resolve({ ok: true, items: [] })
+      : completedHistory.promise;
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'focus-navigation' });
+    if (method === 'live_status') return Promise.resolve(complete('focus-navigation', 210));
+    throw new Error('unexpected ' + method);
+  });
+  h.ready(); await flush();
+  const run = h.nodes['go-control'].click();
+  await flushUntil(() => historyCalls === 2);
+  h.viewButtons[1].click();
+  h.nodes['server-picker'].focus();
+  completedHistory.resolve({ ok: true, items: [] });
+  await run;
+  assert.equal(h.app.state.view, 'history');
+  assert.equal(h.document.activeElement, h.nodes['server-picker'], 'history refresh cannot undo later navigation or focus');
+}
+
 async function testSettingsControlsSaveAndUseValidatedResponse() {
   let validated = { default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', terms_accepted: true };
   const h = harness((method, params) => {
@@ -1594,6 +1670,7 @@ async function testMotionPreferenceAlwaysYieldsToBrowserAccessibility() {
   await testFailedCancelWhileHiddenResumesToCompletion();
   await testTermsAcceptanceResumesLiveRun();
   await testCancellingTermsRestoresGoAndLeavesLocalAvailable();
+  await testTermsRestoreOriginalInvokerAfterPendingSettingsIntervention();
   await testDeviceRouterKeepsLocalBridge();
   await testCancelDuringLocalStopsAfterInflightBatch();
   await testTransientLocalCancelFailureCanBeRetried();
@@ -1634,6 +1711,8 @@ async function testMotionPreferenceAlwaysYieldsToBrowserAccessibility() {
   await testRejectedStartupSettingsStayBlockedUntilRetrySucceeds();
   await testServerSelectionAndAutomaticResetArePersisted();
   await testSelectedServerStartsLiveAndCompletionFocusesResult();
+  await testDeferredCompletionHistoryDoesNotStealFocusFromRetest();
+  await testDeferredCompletionHistoryDoesNotStealNavigationFocus();
   await testSettingsControlsSaveAndUseValidatedResponse();
   await testMotionPreferenceAlwaysYieldsToBrowserAccessibility();
   console.log('frontend live polling ok');
