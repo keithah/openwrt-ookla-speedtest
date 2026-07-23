@@ -958,7 +958,12 @@ async function testErrorRetryUsesFailedModeAndConsumesUiRejections() {
   let settingsCalls = 0;
   const h = harness(method => {
     if (method === 'history') return Promise.resolve({ ok: true, items: [] });
-    if (method === 'settings') { settingsCalls++; return Promise.reject(Object.assign(new Error('offline'), { code: 'offline' })); }
+    if (method === 'settings') {
+      settingsCalls++;
+      return settingsCalls === 1
+        ? Promise.resolve({ ok: true, terms_accepted: true })
+        : Promise.reject(Object.assign(new Error('offline'), { code: 'offline' }));
+    }
     throw new Error('unexpected ' + method);
   });
   h.ready();
@@ -1052,10 +1057,10 @@ async function testModeSelectionIsLockedAndSemanticDuringActiveRun() {
 
 async function testModeLocksWhileTermsSettingsArePending() {
   const settings = deferred();
-  let starts = 0;
+  let starts = 0, settingsCalls = 0;
   const h = harness(method => {
     if (method === 'history') return Promise.resolve({ ok: true, items: [] });
-    if (method === 'settings') return settings.promise;
+    if (method === 'settings') return ++settingsCalls === 1 ? Promise.resolve({ ok: true, terms_accepted: true }) : settings.promise;
     if (method === 'start_live') { starts++; return Promise.resolve({ ok: true, job_id: 'prepared-job' }); }
     if (method === 'live_status') return Promise.resolve(complete('prepared-job', 90));
     throw new Error('unexpected '+method);
@@ -1076,9 +1081,10 @@ async function testModeLocksWhileTermsSettingsArePending() {
   assert.equal(h.app.state.status, 'done');
 
   const rejectedSettings = deferred();
+  let rejectedSettingsCalls = 0;
   const rejected = harness(method => {
     if (method === 'history') return Promise.resolve({ ok: true, items: [] });
-    if (method === 'settings') return rejectedSettings.promise;
+    if (method === 'settings') return ++rejectedSettingsCalls === 1 ? Promise.resolve({ ok: true, terms_accepted: true }) : rejectedSettings.promise;
     throw new Error('unexpected '+method);
   });
   rejected.ready(); await flush();
@@ -1398,6 +1404,57 @@ async function testStartupInteractionsWaitForAuthoritativeSettings() {
   assert.equal(h.app.state.results.internet.download_mbps, 88);
 }
 
+async function testRejectedStartupSettingsStayBlockedUntilRetrySucceeds() {
+  const saved = { ok: true, default_mode: 'both', server_id: '42', history_retention: 50, motion: 'reduced', terms_accepted: true };
+  let settingsCalls = 0;
+  const h = harness((method, params) => {
+    if (method === 'settings') {
+      settingsCalls++;
+      return settingsCalls === 1
+        ? Promise.reject(Object.assign(new Error('settings offline'), { code: 'storage_error' }))
+        : Promise.resolve(saved);
+    }
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    if (method === 'begin_local') return Promise.resolve({ ok: true, run_id: '42424242424242424242424242424242', state: 'active' });
+    if (method === 'local_download') return Promise.resolve({ ok: true, bytes: params.bytes });
+    if (method === 'local_upload') return Promise.resolve({ ok: true, bytes: params.data.length });
+    if (method === 'record_local') return Promise.resolve({ ok: true, run_id: params.run_id, state: 'committed', item: { id: params.run_id } });
+    if (method === 'start_live') {
+      assert.equal(params.server_id, '42', 'recovered initialization supplies the authoritative server');
+      return Promise.resolve({ ok: true, job_id: 'recovered-settings-job' });
+    }
+    if (method === 'live_status') return Promise.resolve(complete('recovered-settings-job', 99));
+    if (method === 'servers') return Promise.resolve({ ok: true, servers: [] });
+    throw new Error('unexpected ' + method);
+  }, { local: { measurementMs: 0, maxBatches: 1 } });
+  h.nodes['server-panel'].hidden = true;
+  h.ready();
+  await flush();
+
+  assert.equal(h.app.state.status, 'error');
+  assert.equal(h.app.state.errorPath, 'settings');
+  assert.match(h.nodes['error-message'].textContent, /Settings startup failed/);
+  h.nodes['go-control'].click();
+  h.modeButtons[2].click();
+  h.nodes['server-picker'].click();
+  await flush();
+  assert.deepEqual(h.calls.map(call => call.method), ['settings']);
+  assert.equal(h.nodes['server-panel'].hidden, true);
+
+  await h.nodes['retry-test'].click();
+  await flush();
+  assert.equal(settingsCalls, 2, 'Retry repeats initialization instead of starting a test');
+  assert.equal(h.app.state.mode, 'both');
+  assert.equal(h.app.state.server.id, '42');
+  assert.equal(h.app.state.status, 'idle');
+
+  await h.nodes['go-control'].click();
+  await flushUntil(() => h.calls.some(call => call.method === 'start_live'));
+  await flush();
+  assert.ok(h.calls.some(call => call.method === 'record_local'), 'saved both mode runs the local path first');
+  assert.ok(h.calls.some(call => call.method === 'start_live'), 'saved both mode continues to the internet path');
+}
+
 async function testServerSelectionAndAutomaticResetArePersisted() {
   const h = harness((method, params) => {
     if (method === 'settings') return Promise.resolve({ ok: true, default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', terms_accepted: true });
@@ -1517,6 +1574,7 @@ async function testMotionPreferenceAlwaysYieldsToBrowserAccessibility() {
   await testTraceBoundsWorkBeforeValidation();
   await testPersistedSettingsApplyBeforeStartupHistoryRender();
   await testStartupInteractionsWaitForAuthoritativeSettings();
+  await testRejectedStartupSettingsStayBlockedUntilRetrySucceeds();
   await testServerSelectionAndAutomaticResetArePersisted();
   await testSettingsControlsSaveAndUseValidatedResponse();
   await testMotionPreferenceAlwaysYieldsToBrowserAccessibility();

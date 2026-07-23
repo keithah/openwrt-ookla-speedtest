@@ -504,7 +504,7 @@ def main(req):
     rec=dict({'id':new_id(),'timestamp':int(time.time()),'kind':'device-router','outcome':'success'},**values)
     n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items)
     return {'ok':True,'item':rec}
-   except Exception: return {'ok':False,'error':{'code':'invalid_local_result'}}
+   except Exception: return {'ok':False,'error':{'code':'storage_error'}}
    finally: unlock(lk)
   if not valid_job_id(run_id): return {'ok':False,'error':{'code':'invalid_local_run_id'}}
   lk=acquire_local_lock()

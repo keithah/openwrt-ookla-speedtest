@@ -1164,6 +1164,24 @@ class LocalRunLifecycleTests(unittest.TestCase):
         self.assertEqual(len(rows), 25)
         self.assertEqual({row["id"] for row in rows[-2:]}, new_ids)
 
+    def test_compatibility_record_storage_failures_are_storage_error(self):
+        service = self.load_service("ookla_compat_storage_failure")
+        request = {
+            "method": "record_local",
+            "download_mbps": "101",
+            "upload_mbps": "80.2",
+            "ping_ms": "3.1",
+        }
+
+        with mock.patch.object(service, "readhist", side_effect=OSError("read failed")):
+            read_failed = service.main(request)
+        with mock.patch.object(service, "writehist", side_effect=OSError("write failed")):
+            write_failed = service.main(request)
+
+        expected = {"ok": False, "error": {"code": "storage_error"}}
+        self.assertEqual(read_failed, expected)
+        self.assertEqual(write_failed, expected)
+
     def test_history_commit_repairs_active_marker_after_power_loss(self):
         service = self.load_service("ookla_local_power_loss")
         run_id = service.main({"method": "begin_local"})["run_id"]
