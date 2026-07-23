@@ -61,6 +61,8 @@ assert.equal(Results.networkSummary({ network_context: { vpn: true, vpn_kind: 's
   'Router → Internet via Speedify');
 assert.equal(Results.networkSummary({ network_context: { vpn: true, vpn_name: 'WireGuard' } }),
   'Router → Internet via WireGuard');
+assert.equal(Results.networkSummary({ network_context: { vpn: true } }),
+  'Router → Internet via VPN tunnel');
 assert.equal(Results.networkSummary({ network_context: { possible_vpn: true } }),
   'Router → Internet via possible VPN/proxy path');
 assert.equal(Results.networkSummary({ network_context: { vpn: false } }),
@@ -162,6 +164,7 @@ let frameNow = 0;
 function stepFrame(at) { frameNow = at; const callbacks = [...rafs.values()]; rafs.clear(); callbacks.forEach(fn => fn(at)); }
 ready();
 app.render();
+assert.equal(nodes['server-picker'].attributes['aria-label'], 'Change server');
 assert.equal(nodes['gauge-dial'].hidden, true, 'idle hides the full dial');
 assert.equal(nodes['gauge-readout'].hidden, true, 'idle hides the live readout');
 assert.equal(nodes['go-control'].hidden, false, 'idle shows GO');
@@ -253,6 +256,11 @@ assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 4
 assert.equal(nodes['phase-label'].textContent, 'Complete');
 assert.equal(nodes['phase-announcer'].textContent, 'Test complete');
 assert.equal(nodes['live-gauge'].attributes['aria-busy'], 'false');
+assert.equal(nodes['go-control'].textContent, 'RETEST');
+assert.equal(nodes['go-control'].attributes['aria-label'], 'Run Router to Internet test again');
+for (const id of ['metric-ping', 'metric-download', 'metric-upload']) {
+  assert.equal(nodes[id].attributes['aria-current'], undefined, 'terminal states have no active metric');
+}
 
 Object.assign(app.state, { status: 'error', phase: 'error', errorPath: 'internet', errorCode: 'network_timeout', failedPhase: 'download', failedMode: 'both' });
 app.render();

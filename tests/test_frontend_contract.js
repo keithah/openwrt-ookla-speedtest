@@ -24,6 +24,12 @@ for(const id of ['phase-announcer','error-message','retry-test']) assert.match(h
 const stageStart=html.indexOf('id="test-stage"'),resultsStart=html.indexOf('id="results"'),stageEnd=html.indexOf('</section>',stageStart);assert.ok(stageStart>=0&&resultsStart>stageStart&&resultsStart<stageEnd,'results must belong to the test stage');
 assert.match(html,/id=["']live-announcer["'][^>]*aria-live=["']polite["'][^>]*data-throttle-ms=["']\d+["']/);
 assert.match(html,/id=["']phase-announcer["'][^>]*aria-live=["']polite["']/);
+assert.match(html,/role=["']alert["'][^>]*aria-atomic=["']true["']/);
+assert.match(html,/<dialog[^>]*id=["']terms-dialog["'][^>]*aria-labelledby=["']terms-title["']/);
+for (const label of ['History','Analytics','Settings','About']) {
+  assert.match(html, new RegExp(`<button[^>]*data-view=["'][^"']+["'][^>]*aria-label=["']${label}["'][^>]*>[\\s\\S]*?<svg[^>]*aria-hidden=["']true["']`));
+}
+for (const label of ['GO','Cancel test','Retry','Change','I agree']) assert.match(html,new RegExp(`>\\s*${label}\\s*<`));
 assert.match(html,/id=["']download-trace-label["']/);assert.match(html,/id=["']upload-trace-label["']/);
 assert.match(html,/id=["']retry-test["'][^>]*>Retry</);
 assert.match(html,/id=["']primary-metrics["'][^>]*hidden/);assert.match(html,/class=["']latency-strip["'][^>]*hidden/);
@@ -36,6 +42,10 @@ assert.match(js,/function announceGauge\s*\(/); assert.match(js,/setTimeout\s*\(
 assert.match(js,/router.*internet|internet.*router/i); assert.match(css,/@media/); assert.match(css,/#0?4|navy|cyan/i);
 assert.match(css,/--cyan\s*:/); assert.match(css,/--violet\s*:/); assert.match(css,/:focus-visible/); assert.match(css,/@media\s*\(prefers-reduced-motion:\s*reduce\)/); assert.match(css,/@media\s*\(max-width:\s*640px\)/); assert.match(css,/grid-template-columns:\s*1fr/);
 assert.match(css,/\.icon-nav button\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px/s);
+assert.match(css,/html\s*,\s*body\s*,\s*#app\s*\{[^}]*max-width:\s*100%;[^}]*overflow-x:\s*hidden/s);
+assert.match(css,/@media\s*\(max-width:\s*520px\)[\s\S]*\.metrics-strip\s*,\s*\.final-result\s*\{[^}]*grid-template-columns:\s*1fr/s);
+assert.match(css,/width:\s*min\(286px\s*,\s*calc\(100vw\s*-\s*56px\)\)/);
+assert.match(css,/(?:button|\.mode-picker button|\.server button)[^{]*\{[^}]*min-height:\s*44px/s);
 assert.match(css,/@media\s*\(max-width:\s*480px\)\s*\{[^}]*\.app-header\s*\{[^}]*flex-direction:\s*column;[^}]*align-items:\s*stretch;[^}]*\}\s*\.brand-lockup strong\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*\}\s*\.icon-nav\s*\{[^}]*flex-wrap:\s*wrap;[^}]*\}/s);
 assert.match(css,/\.gauge-needle\s*\{[^}]*transform-box:\s*view-box/);
 assert.doesNotMatch(html,/id=["']gauge-needle["'][^>]*\stransform=/);

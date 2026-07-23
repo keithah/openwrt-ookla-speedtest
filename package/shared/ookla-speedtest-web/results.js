@@ -55,6 +55,7 @@
     section.className = 'result-card ' + kind;
     var heading = doc.createElement('h2');
     heading.textContent = title;
+    heading.setAttribute('tabindex', '-1');
     section.appendChild(heading);
     line(doc, section, 'Download', result.download_mbps, 'Mbps');
     line(doc, section, 'Upload', result.upload_mbps, 'Mbps');

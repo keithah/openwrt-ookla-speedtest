@@ -21,6 +21,7 @@ class FakeNode {
   }
   addEventListener(name, fn) { this.listeners[name] = fn; }
   click() { if (!this.disabled && this.listeners.click) return this.listeners.click.call(this); }
+  focus() { if (this.ownerDocument) this.ownerDocument.activeElement = this; }
   appendChild(node) { this.children.push(node); return node; }
   removeChild(node) { this.children.splice(this.children.indexOf(node), 1); }
   get firstChild() { return this.children[0] || null; }
@@ -28,6 +29,7 @@ class FakeNode {
   removeAttribute(name) { delete this.attributes[name]; }
   getAttribute(name) { return this.attributes[name] || null; }
   showModal() { this.open = true; }
+  close(value) { this.open = false; this.returnValue = value || ''; if (this.listeners.close) this.listeners.close.call(this); }
 }
 
 class FakeTimers {
@@ -66,7 +68,7 @@ function harness(handler, options) {
     'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
     'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
     'server-detail', 'results', 'view', 'terms-dialog', 'accept-terms', 'server-picker', 'server-panel',
-    'server-search', 'server-results', 'phase-announcer', 'error-message', 'retry-test'];
+    'server-search', 'server-results', 'phase-announcer', 'error-message', 'retry-test', 'terms-title'];
   const nodes = Object.fromEntries(ids.map(id => [id, new FakeNode()]));
   const modeButtons = ['router-internet', 'device-router', 'both'].map(mode => { const node = new FakeNode(); node.setAttribute('data-mode', mode); return node; });
   nodes['live-announcer'].setAttribute('data-throttle-ms', '1000');
@@ -76,11 +78,12 @@ function harness(handler, options) {
   const rafs = new Map(), documentListeners = {};
   const document = {
     visibilityState: 'visible',
+    activeElement: null,
     addEventListener(name, fn) { if (name === 'DOMContentLoaded') ready = fn; else documentListeners[name] = fn; },
     removeEventListener(name, fn) { if (documentListeners[name] === fn) delete documentListeners[name]; },
     dispatchEvent(event) { const fn = documentListeners[event.type]; if (fn) fn(event); },
-    createElement() { return new FakeNode(); },
-    createTextNode(value) { const node = new FakeNode(); node.textContent = value; return node; },
+    createElement() { const node = new FakeNode(); node.ownerDocument = document; return node; },
+    createTextNode(value) { const node = new FakeNode(); node.ownerDocument = document; node.textContent = value; return node; },
     getElementById(id) { return nodes[id] || null; },
     querySelector(selector) { return selector === '.latency-strip' ? latency : null; },
     querySelectorAll(selector) { return selector === '[data-gauge-scale]' ? scaleLabels : selector === '[data-mode]' ? modeButtons : []; }
@@ -453,12 +456,36 @@ async function testTermsAcceptanceResumesLiveRun() {
   await flush();
   await h.app.runMode('router-internet');
   assert.equal(h.nodes['terms-dialog'].open, true);
+  assert.equal(h.document.activeElement, h.nodes['terms-title'], 'opening terms focuses its heading');
   assert.equal(h.calls.some(call => call.method === 'start_live'), false);
   h.nodes['accept-terms'].click();
   await flush();
   assert.equal(h.calls.filter(call => call.method === 'accept_terms').length, 1);
   assert.equal(h.calls.filter(call => call.method === 'start_live').length, 1);
   assert.equal(h.app.state.status, 'done');
+}
+
+async function testCancellingTermsRestoresGoAndLeavesLocalAvailable() {
+  const h = harness((method, params) => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: false });
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    if (method === 'begin_local') return Promise.resolve({ ok: true, run_id: 'abababababababababababababababab', state: 'active' });
+    if (method === 'local_download') return Promise.resolve({ ok: true, bytes: params.bytes });
+    if (method === 'local_upload') return Promise.resolve({ ok: true, bytes: params.data.length });
+    if (method === 'record_local') return Promise.resolve({ ok: true, state: 'committed' });
+    throw new Error('unexpected ' + method);
+  }, { local: { measurementMs: 0, maxBatches: 1 } });
+  h.ready(); await flush();
+  h.nodes['go-control'].focus();
+  await h.nodes['go-control'].click();
+  assert.equal(h.nodes['terms-dialog'].open, true);
+  h.nodes['terms-dialog'].close('cancel');
+  assert.equal(h.app.state.status, 'idle');
+  assert.equal(h.app.state.pendingMode, null);
+  assert.equal(h.document.activeElement, h.nodes['go-control'], 'closing terms restores the invoking control');
+  await h.app.runMode('device-router');
+  assert.equal(h.calls.some(call => call.method === 'begin_local'), true, 'local testing remains available without internet terms');
+  assert.equal(h.calls.some(call => call.method === 'start_live'), false);
 }
 
 async function testDeviceRouterKeepsLocalBridge() {
@@ -1467,16 +1494,45 @@ async function testServerSelectionAndAutomaticResetArePersisted() {
   await flush();
   await h.nodes['server-picker'].click();
   await flush();
+  assert.equal(h.document.activeElement, h.nodes['server-search'], 'server picker focuses search');
+  h.document.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.equal(h.nodes['server-panel'].hidden, true, 'Escape closes the server panel');
+  assert.equal(h.document.activeElement, h.nodes['server-picker'], 'Escape restores picker focus');
+  await h.nodes['server-picker'].click(); await flush();
   h.nodes['server-search'].value = 'chosen';
   h.nodes['server-search'].listeners.input.call(h.nodes['server-search']);
   await h.nodes['server-results'].children[1].onclick();
   assert.equal(h.calls.filter(call => call.method === 'save_settings')[0].params.server_id, '42');
   assert.equal(h.app.state.server.id, '42');
+  assert.equal(h.document.activeElement, h.nodes['server-picker'], 'selecting a server restores picker focus');
   h.nodes['server-search'].value = '';
   h.nodes['server-search'].listeners.input.call(h.nodes['server-search']);
   await h.nodes['server-results'].children[0].onclick();
   assert.equal(h.calls.filter(call => call.method === 'save_settings')[1].params.server_id, '');
   assert.equal(h.app.state.server.id, undefined);
+}
+
+async function testSelectedServerStartsLiveAndCompletionFocusesResult() {
+  const h = harness((method, params) => {
+    if (method === 'settings') return Promise.resolve({ ok: true, default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', terms_accepted: true });
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    if (method === 'servers') return Promise.resolve({ ok: true, servers: [{ id: 73, name: 'Seattle', location: 'WA' }] });
+    if (method === 'save_settings') return Promise.resolve({ ok: true, default_mode: 'router-internet', server_id: params.server_id, history_retention: 100, motion: 'system', terms_accepted: true });
+    if (method === 'start_live') { assert.equal(params.server_id, '73'); return Promise.resolve({ ok: true, job_id: 'selected-job' }); }
+    if (method === 'live_status') return Promise.resolve(complete('selected-job', 210));
+    throw new Error('unexpected ' + method);
+  });
+  h.ready(); await flush();
+  await h.nodes['server-picker'].click(); await flush();
+  await h.nodes['server-results'].children[1].onclick();
+  h.app.render();
+  assert.equal(h.app.state.server.id, 73, 'the rich selected server survives rendering');
+  await h.app.runMode('router-internet');
+  const heading = h.nodes.results.children[0].children[0];
+  assert.equal(heading.attributes.tabindex, '-1');
+  assert.equal(h.document.activeElement, heading, 'completion moves focus to the result heading');
+  assert.equal(h.nodes['go-control'].textContent, 'RETEST');
+  assert.equal(h.nodes['go-control'].attributes['aria-label'], 'Run Router to Internet test again');
 }
 
 async function testSettingsControlsSaveAndUseValidatedResponse() {
@@ -1537,6 +1593,7 @@ async function testMotionPreferenceAlwaysYieldsToBrowserAccessibility() {
   await testCancelWhileHiddenDoesNotPollAgain();
   await testFailedCancelWhileHiddenResumesToCompletion();
   await testTermsAcceptanceResumesLiveRun();
+  await testCancellingTermsRestoresGoAndLeavesLocalAvailable();
   await testDeviceRouterKeepsLocalBridge();
   await testCancelDuringLocalStopsAfterInflightBatch();
   await testTransientLocalCancelFailureCanBeRetried();
@@ -1576,6 +1633,7 @@ async function testMotionPreferenceAlwaysYieldsToBrowserAccessibility() {
   await testStartupInteractionsWaitForAuthoritativeSettings();
   await testRejectedStartupSettingsStayBlockedUntilRetrySucceeds();
   await testServerSelectionAndAutomaticResetArePersisted();
+  await testSelectedServerStartsLiveAndCompletionFocusesResult();
   await testSettingsControlsSaveAndUseValidatedResponse();
   await testMotionPreferenceAlwaysYieldsToBrowserAccessibility();
   console.log('frontend live polling ok');
