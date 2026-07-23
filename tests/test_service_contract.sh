@@ -9,6 +9,11 @@ SH
 chmod +x "$ROOT/bin/speedtest"
 export OOKLA_WEBD_RUN_DIR="$ROOT/run" OOKLA_WEBD_HISTORY="$ROOT/etc/history.jsonl" OOKLA_SPEEDTEST_BIN="$ROOT/bin/speedtest"
 SVC=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd
+WORKER=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd-worker
+[ "$(grep -c -- '--progress-update-interval=100' "$WORKER")" -eq 1 ]
+! grep -q -- '--progress-update-interval=500' "$WORKER"
+grep -Fq "network_context(result.get('isp'))" "$SVC"
+grep -Fq 'network_context(result.get("isp"))' "$WORKER"
 RPC=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/luci-app-ookla-speedtest-web/usr/libexec/rpcd/ookla-speedtest-web
 "$RPC" list | grep -q '"local_download"'
 "$RPC" list | grep -q '"begin_local"'

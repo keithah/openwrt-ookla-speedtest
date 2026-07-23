@@ -167,6 +167,125 @@ class ServiceLiveTests(unittest.TestCase):
             with self.subTest(event=event):
                 self.assertIsNone(self.mod.reduce_event(event))
 
+    def test_worker_requests_100_ms_progress_updates(self):
+        source = WORKER.read_text()
+
+        self.assertEqual(source.count('"--progress-update-interval=100"'), 1)
+        self.assertNotIn("--progress-update-interval=500", source)
+
+    def test_network_context_classifies_vpn_interfaces_by_precedence(self):
+        cases = [
+            (
+                {
+                    "interfaces": ["tailscale0"],
+                    "processes": ["tailscaled"],
+                    "default_interface": "tailscale0",
+                },
+                (True, "tailscale-exit", "Tailscale"),
+            ),
+            (
+                {"interfaces": ["speedify"], "processes": ["speedify"]},
+                (True, "speedify", "Speedify"),
+            ),
+            ({"interfaces": ["wg0"], "processes": []}, (True, "wireguard", "WireGuard")),
+            (
+                {"interfaces": ["tun0"], "processes": ["openvpn"]},
+                (True, "openvpn", "OpenVPN"),
+            ),
+            ({"interfaces": ["wan"], "processes": []}, (False, None, None)),
+        ]
+
+        for evidence, expected in cases:
+            with self.subTest(evidence=evidence):
+                interfaces = "".join(
+                    "%d: %s: <UP>\n" % (index, name)
+                    for index, name in enumerate(evidence["interfaces"], 1)
+                )
+                default_route = (
+                    "default dev %s\n" % evidence["default_interface"]
+                    if evidence.get("default_interface")
+                    else "default via 192.0.2.1 dev wan\n"
+                )
+
+                def check_output(command, **_kwargs):
+                    if command == ["ip", "-o", "link", "show"]:
+                        return interfaces
+                    if command == ["ip", "route", "show", "default"]:
+                        return default_route
+                    if command == ["uci", "-q", "get", "network.wan.provider"]:
+                        raise subprocess.CalledProcessError(1, command)
+                    self.fail("unexpected command: %r" % (command,))
+
+                def process_status(command, **_kwargs):
+                    return 0 if command[1] in evidence["processes"] else 1
+
+                with mock.patch.object(
+                    self.mod.subprocess, "check_output", side_effect=check_output
+                ), mock.patch.object(
+                    self.mod.subprocess, "call", side_effect=process_status
+                ):
+                    context = self.mod.network_context()
+
+                self.assertEqual(
+                    (context["vpn"], context["vpn_kind"], context["vpn_name"]),
+                    expected,
+                )
+                self.assertIn("possible_vpn", context)
+                self.assertIn("note", context)
+
+    def test_tailscale_without_default_route_is_not_an_exit_path(self):
+        def check_output(command, **_kwargs):
+            if command == ["ip", "-o", "link", "show"]:
+                return "1: tailscale0: <UP>\n"
+            if command == ["ip", "route", "show", "default"]:
+                return "default via 192.0.2.1 dev wan\n"
+            if command == ["uci", "-q", "get", "network.wan.provider"]:
+                raise subprocess.CalledProcessError(1, command)
+            self.fail("unexpected command: %r" % (command,))
+
+        with mock.patch.object(
+            self.mod.subprocess, "check_output", side_effect=check_output
+        ), mock.patch.object(self.mod.subprocess, "call", return_value=0):
+            context = self.mod.network_context()
+
+        self.assertEqual(context["vpn_kind"], "tailscale")
+        self.assertEqual(
+            context["note"], "Test reflects router traffic through Tailscale."
+        )
+
+    def test_network_context_warns_only_on_different_nonempty_isp_evidence(self):
+        cases = [
+            ("Public ISP", "Router ISP", True),
+            ("  Public   ISP ", "public isp", False),
+            ("Public ISP", None, False),
+            (None, "Router ISP", False),
+        ]
+
+        for result_isp, configured_provider, expected_warning in cases:
+            with self.subTest(
+                result_isp=result_isp, configured_provider=configured_provider
+            ):
+                def check_output(command, **_kwargs):
+                    if command == ["ip", "-o", "link", "show"]:
+                        return "1: wan: <UP>\n"
+                    if command == ["ip", "route", "show", "default"]:
+                        return "default via 192.0.2.1 dev wan\n"
+                    if command == ["uci", "-q", "get", "network.wan.provider"]:
+                        if configured_provider is None:
+                            raise subprocess.CalledProcessError(1, command)
+                        return configured_provider + "\n"
+                    self.fail("unexpected command: %r" % (command,))
+
+                with mock.patch.object(
+                    self.mod.subprocess, "check_output", side_effect=check_output
+                ), mock.patch.object(self.mod.subprocess, "call", return_value=1):
+                    context = self.mod.network_context(result_isp)
+
+                self.assertFalse(context["vpn"])
+                self.assertEqual(context["possible_vpn"], expected_warning)
+                self.assertEqual(context["vpn_kind"], None)
+                self.assertEqual(context["vpn_name"], None)
+
 
 class LiveJobTests(unittest.TestCase):
     def setUp(self):

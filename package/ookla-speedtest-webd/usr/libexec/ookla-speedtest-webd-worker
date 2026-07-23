@@ -111,7 +111,7 @@ def run(job_id, server_id):
         "--accept-license",
         "--format=jsonl",
         "--progress=yes",
-        "--progress-update-interval=500",
+        "--progress-update-interval=100",
     ]
     if server_id is not None:
         command += ["--server-id", server_id]
@@ -235,7 +235,7 @@ def run(job_id, server_id):
                 }
             )
         else:
-            result["network_context"] = service.network_context()
+            result["network_context"] = service.network_context(result.get("isp"))
             state.update(
                 {
                     "ok": True,
