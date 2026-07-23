@@ -44,6 +44,24 @@ def unlock(x):
  if d:
   try: os.rmdir(d)
   except: pass
+def acquire_settings_lock():
+ p=os.path.join(run,'settings.lock'); deadline=time.monotonic()+2
+ try: f=open(p,'w')
+ except OSError: return 'storage_error',None
+ while time.monotonic()<deadline:
+  try:
+   fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB); return f,None
+  except BlockingIOError: time.sleep(.005)
+  except OSError as e:
+   f.close()
+   if e.errno not in (errno.ENOSYS,errno.ENOTSUP,errno.EOPNOTSUPP): return 'storage_error',None
+   d=p+'.d'
+   while time.monotonic()<deadline:
+    try: os.mkdir(d); return None,d
+    except FileExistsError: time.sleep(.005)
+    except OSError: return 'storage_error',None
+   return 'storage_error',None
+ f.close(); return 'storage_error',None
 statefile=os.path.join(run,'state.json')
 termsfile=os.environ.get('OOKLA_WEBD_TERMS',os.path.join(os.path.dirname(hist),'terms-accepted'))
 servercachefile=os.path.join(run,'servers-cache.json')
@@ -417,6 +435,8 @@ def main(req):
   finally: unlock(lk)
  if m=='settings': return settings_response()
  if m=='save_settings':
+  lk=acquire_settings_lock()
+  if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
   try:
    supplied={key:req[key] for key in DEFAULT_SETTINGS if key in req}
    merged=validate_settings(dict(readsettings(),**supplied))
@@ -424,6 +444,7 @@ def main(req):
    return dict({'ok':True},**merged,terms_accepted=terms_accepted())
   except ValueError: return {'ok':False,'error':{'code':'invalid_settings'}}
   except Exception: return {'ok':False,'error':{'code':'storage_error'}}
+  finally: unlock(lk)
  if m=='accept_terms':
   try: atomic_write(termsfile,'accepted\n'); return {'ok':True}
   except Exception: return {'ok':False,'error':{'code':'storage_error'}}
@@ -476,11 +497,15 @@ def main(req):
   except Exception: return {'ok':False,'error':{'code':'invalid_local_result'}}
   run_id=req.get('run_id')
   if run_id is None:
+   lk=acquire_local_lock()
+   if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}
+   if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
    try:
     rec=dict({'id':new_id(),'timestamp':int(time.time()),'kind':'device-router','outcome':'success'},**values)
     n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]; writehist(items)
     return {'ok':True,'item':rec}
    except Exception: return {'ok':False,'error':{'code':'invalid_local_result'}}
+   finally: unlock(lk)
   if not valid_job_id(run_id): return {'ok':False,'error':{'code':'invalid_local_run_id'}}
   lk=acquire_local_lock()
   if lk==(None,None): return {'ok':False,'error':{'code':'busy'}}

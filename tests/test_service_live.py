@@ -883,6 +883,7 @@ class LocalRunLifecycleTests(unittest.TestCase):
             os.environ,
             OOKLA_WEBD_RUN_DIR=str(self.run_dir),
             OOKLA_WEBD_HISTORY=str(self.history),
+            OOKLA_WEBD_SETTINGS=str(self.etc_dir / "settings.json"),
             OOKLA_LOCAL_RUN_LEASE="15",
             OOKLA_LOCAL_RUN_TTL="600",
         )
@@ -1048,6 +1049,120 @@ class LocalRunLifecycleTests(unittest.TestCase):
         rows = self.history_rows()
         self.assertEqual(len(rows), len(original) + 1)
         self.assertEqual([row["id"] for row in rows].count(run_id), 1)
+
+    def test_concurrent_partial_settings_saves_preserve_both_fields(self):
+        service = self.load_service("ookla_settings_race")
+        first_at_write = threading.Event()
+        second_at_write = threading.Event()
+        release_first = threading.Event()
+        first_written = threading.Event()
+        real_atomic_write = service.atomic_write
+        settings_writes = 0
+        calls_lock = threading.Lock()
+
+        def coordinated_write(path, data):
+            nonlocal settings_writes
+            if path != service.settingsfile:
+                return real_atomic_write(path, data)
+            with calls_lock:
+                settings_writes += 1
+                call_number = settings_writes
+            if call_number == 1:
+                first_at_write.set()
+                release_first.wait(timeout=2)
+                real_atomic_write(path, data)
+                first_written.set()
+                return
+            second_at_write.set()
+            first_written.wait(timeout=2)
+            return real_atomic_write(path, data)
+
+        with mock.patch.object(service, "atomic_write", side_effect=coordinated_write):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first = executor.submit(
+                    service.main,
+                    {"method": "save_settings", "default_mode": "both"},
+                )
+                self.assertTrue(first_at_write.wait(timeout=2))
+                second = executor.submit(
+                    service.main,
+                    {"method": "save_settings", "motion": "reduced"},
+                )
+                second_at_write.wait(timeout=0.2)
+                release_first.set()
+                responses = [first.result(timeout=2), second.result(timeout=2)]
+
+        self.assertTrue(all(response["ok"] for response in responses))
+        self.assertEqual(service.readsettings()["default_mode"], "both")
+        self.assertEqual(service.readsettings()["motion"], "reduced")
+
+    def test_settings_lock_failure_is_stable_storage_error(self):
+        service = self.load_service("ookla_settings_lock_failure")
+        with mock.patch.object(
+            service, "acquire_settings_lock", return_value=("storage_error", None)
+        ):
+            response = service.main(
+                {"method": "save_settings", "default_mode": "both"}
+            )
+
+        self.assertEqual(response, {"ok": False, "error": {"code": "storage_error"}})
+
+    def test_concurrent_compatibility_records_keep_both_newest_at_retention(self):
+        service = self.load_service("ookla_compat_history_race")
+        service.atomic_write(
+            service.settingsfile,
+            json.dumps(dict(service.DEFAULT_SETTINGS, history_retention=25)),
+        )
+        original = [
+            {"id": f"older-{index}", "kind": "device-router", "outcome": "success"}
+            for index in range(25)
+        ]
+        service.writehist(original)
+        first_at_write = threading.Event()
+        second_at_write = threading.Event()
+        release_first = threading.Event()
+        first_written = threading.Event()
+        real_atomic_write = service.atomic_write
+        history_writes = 0
+        calls_lock = threading.Lock()
+
+        def coordinated_write(path, data):
+            nonlocal history_writes
+            if path != service.hist:
+                return real_atomic_write(path, data)
+            with calls_lock:
+                history_writes += 1
+                call_number = history_writes
+            if call_number == 1:
+                first_at_write.set()
+                release_first.wait(timeout=2)
+                real_atomic_write(path, data)
+                first_written.set()
+                return
+            second_at_write.set()
+            first_written.wait(timeout=2)
+            return real_atomic_write(path, data)
+
+        request = lambda value: {
+            "method": "record_local",
+            "download_mbps": str(value),
+            "upload_mbps": "80.2",
+            "ping_ms": "3.1",
+        }
+        with mock.patch.object(service, "atomic_write", side_effect=coordinated_write):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first = executor.submit(service.main, request(101))
+                self.assertTrue(first_at_write.wait(timeout=2))
+                second = executor.submit(service.main, request(202))
+                second_at_write.wait(timeout=0.2)
+                release_first.set()
+                responses = [first.result(timeout=2), second.result(timeout=2)]
+
+        rows = service.readhist()
+        new_ids = {response["item"]["id"] for response in responses}
+        self.assertTrue(all(response["ok"] for response in responses))
+        self.assertEqual(len(rows), 25)
+        self.assertEqual({row["id"] for row in rows[-2:]}, new_ids)
 
     def test_history_commit_repairs_active_marker_after_power_loss(self):
         service = self.load_service("ookla_local_power_loss")

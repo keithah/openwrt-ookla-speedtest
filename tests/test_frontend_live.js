@@ -1356,6 +1356,48 @@ async function testPersistedSettingsApplyBeforeStartupHistoryRender() {
   assert.equal(h.modeButtons[2].attributes['aria-pressed'], 'true');
 }
 
+async function testStartupInteractionsWaitForAuthoritativeSettings() {
+  const startupSettings = deferred();
+  const saved = { ok: true, default_mode: 'router-internet', server_id: '42', history_retention: 50, motion: 'reduced', terms_accepted: true };
+  let settingsCalls = 0;
+  const h = harness((method, params) => {
+    if (method === 'settings') {
+      settingsCalls++;
+      return settingsCalls === 1 ? startupSettings.promise : Promise.resolve(saved);
+    }
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    if (method === 'start_live') {
+      assert.equal(params.server_id, '42', 'first accepted run uses saved server');
+      return Promise.resolve({ ok: true, job_id: 'saved-settings-job' });
+    }
+    if (method === 'live_status') return Promise.resolve(complete('saved-settings-job', 88));
+    if (method === 'servers') return Promise.resolve({ ok: true, servers: [] });
+    throw new Error('unexpected ' + method);
+  });
+  h.app.state.mode = 'device-router';
+  h.nodes['server-panel'].hidden = true;
+  h.ready();
+  h.nodes['go-control'].click();
+  h.modeButtons[2].click();
+  h.nodes['server-picker'].click();
+  await flush();
+
+  assert.deepEqual(h.calls.map(call => call.method), ['settings']);
+  assert.equal(h.app.state.mode, 'device-router', 'mode click is ignored while settings are pending');
+  assert.equal(h.nodes['server-panel'].hidden, true, 'server picker is ignored while settings are pending');
+
+  startupSettings.resolve(saved);
+  await flush();
+  assert.equal(h.app.state.mode, 'router-internet');
+  assert.equal(h.app.state.server.id, '42');
+  assert.equal(h.modeButtons[0].attributes['aria-pressed'], 'true');
+
+  await h.nodes['go-control'].click();
+  await flush();
+  assert.ok(h.calls.some(call => call.method === 'start_live'));
+  assert.equal(h.app.state.results.internet.download_mbps, 88);
+}
+
 async function testServerSelectionAndAutomaticResetArePersisted() {
   const h = harness((method, params) => {
     if (method === 'settings') return Promise.resolve({ ok: true, default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', terms_accepted: true });
@@ -1386,6 +1428,8 @@ async function testSettingsControlsSaveAndUseValidatedResponse() {
     if (method === 'save_settings') { validated = Object.assign({}, validated, params); validated.history_retention = Number(validated.history_retention); return Promise.resolve(Object.assign({ ok: true }, validated)); }
     return Promise.resolve({ ok: true, items: [] });
   });
+  h.ready();
+  await flush();
   h.app.state.settings = { default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', terms_accepted: true };
   h.app.state.view = 'settings';
   h.app.render();
@@ -1472,6 +1516,7 @@ async function testMotionPreferenceAlwaysYieldsToBrowserAccessibility() {
   await testMalformedNumericSamplesBecomeStableErrors();
   await testTraceBoundsWorkBeforeValidation();
   await testPersistedSettingsApplyBeforeStartupHistoryRender();
+  await testStartupInteractionsWaitForAuthoritativeSettings();
   await testServerSelectionAndAutomaticResetArePersisted();
   await testSettingsControlsSaveAndUseValidatedResponse();
   await testMotionPreferenceAlwaysYieldsToBrowserAccessibility();
