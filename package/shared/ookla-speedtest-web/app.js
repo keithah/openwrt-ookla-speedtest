@@ -92,12 +92,7 @@ function pollLive(jobId,runToken){
   if(!ownsRun(runToken,jobId)) return Promise.reject(liveError('stale_live_job'));
   if(state.status==='cancelled') return Promise.reject(liveError('cancelled'));
   if(state.cancelRequested)return pollDelay(runToken,LIVE_POLL_MS).then(function(){return pollLive(jobId,runToken)});
-  return waitUntilVisible(runToken).then(function(){
-    if(!ownsRun(runToken,jobId))throw liveError('stale_live_job');
-    if(state.status==='cancelled')throw liveError('cancelled');
-    if(state.cancelRequested||state.status==='cancelling')return pollDelay(runToken,LIVE_POLL_MS).then(function(){return pollLive(jobId,runToken)});
-    return checked('live_status',{job_id:jobId});
-  }).then(function(payload){
+  function handlePayload(payload){
     if(!ownsRun(runToken,jobId))throw liveError('stale_live_job');
     if(state.status==='cancelled')throw liveError('cancelled');
     if(state.cancelRequested)return pollDelay(runToken,LIVE_POLL_MS).then(function(){return pollLive(jobId,runToken)});
@@ -107,7 +102,8 @@ function pollLive(jobId,runToken){
     if(state.status==='cancelled')throw liveError('cancelled');
     if(state.status==='error')throw liveError(payload.error&&payload.error.code||'speedtest_failed');
     return waitUntilVisible(runToken).then(function(){return pollDelay(runToken,LIVE_POLL_MS)}).then(function(){return pollLive(jobId,runToken)});
-  },function(error){
+  }
+  function handleError(error){
     if(!ownsRun(runToken,jobId))throw liveError('stale_live_job');
     if(state.status==='cancelled')throw liveError('cancelled');
     if(state.cancelRequested)return pollDelay(runToken,LIVE_POLL_MS).then(function(){return pollLive(jobId,runToken)});
@@ -115,6 +111,12 @@ function pollLive(jobId,runToken){
     state.pollFailures+=1;
     if(state.pollFailures>3){setLiveError(error,jobId);throw error}
     return waitUntilVisible(runToken).then(function(){return pollDelay(runToken,nextPollDelay(state.pollFailures))}).then(function(){return pollLive(jobId,runToken)});
+  }
+  return waitUntilVisible(runToken).then(function(){
+    if(!ownsRun(runToken,jobId))throw liveError('stale_live_job');
+    if(state.status==='cancelled')throw liveError('cancelled');
+    if(state.cancelRequested||state.status==='cancelling')return pollDelay(runToken,LIVE_POLL_MS).then(function(){return pollLive(jobId,runToken)});
+    return checked('live_status',{job_id:jobId}).then(handlePayload,handleError);
   }).catch(function(error){if(error.code==='malformed_live_status'&&ownsRun(runToken,jobId))setLiveError(error,jobId);throw error});
 }
 function cancelFailed(error,runToken,jobId){if(ownsRun(runToken,jobId)){state.cancelRequested=false;state.status='running';render();notify()}return{ok:false,error:{code:error.code||'transport_error',message:error.message||String(error)}}}

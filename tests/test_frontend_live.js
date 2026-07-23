@@ -263,6 +263,42 @@ async function testCancelWhileHiddenDoesNotPollAgain() {
   assert.equal(error.code, 'cancelled');
 }
 
+async function testFailedCancelWhileHiddenResumesToCompletion() {
+  let polls = 0;
+  const h = harness(method => {
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'hidden-cancel-failure' });
+    if (method === 'live_status') {
+      polls++;
+      return Promise.resolve(polls === 1
+        ? status('hidden-cancel-failure', { phase: 'download', progress: 0.2, download_mbps: 30 })
+        : complete('hidden-cancel-failure', 130));
+    }
+    if (method === 'cancel_live') return Promise.reject(new Error('cancel transport failed'));
+    throw new Error('unexpected ' + method);
+  });
+  const completion = h.app.internetTest().then(result => ({ result }), error => ({ error }));
+  await flush();
+  h.document.visibilityState = 'hidden';
+  await h.timers.tick(100);
+  assert.equal(polls, 1, 'the next poll is waiting for visibility');
+
+  const outcome = await h.app.cancelTest();
+  assert.equal(outcome.ok, false);
+  assert.equal(h.app.state.status, 'running', 'a failed cancellation restores the live run');
+  assert.equal(polls, 1, 'cancellation wakeup does not issue a status request while hidden');
+
+  await h.timers.tick(100);
+  h.document.visibilityState = 'visible';
+  h.document.dispatchEvent({ type: 'visibilitychange' });
+  const settled = await completion;
+
+  assert.equal(settled.error && settled.error.code, undefined, 'the resumed poll result is not parsed again as a status payload');
+  assert.equal(settled.result.download_mbps, 130);
+  assert.equal(h.app.state.status, 'done');
+  assert.equal(h.app.state.phase, 'complete');
+  assert.equal(polls, 2);
+}
+
 async function testStaleResponsesAreIgnored() {
   const h = harness(() => Promise.resolve({}));
   h.app.state.activeJob = 'new-job';
@@ -1314,6 +1350,7 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testDeleteHistoryActionRefreshesRenderedHistory();
   await testClearHistoryActionRefreshesRenderedHistory();
   await testCancelWhileHiddenDoesNotPollAgain();
+  await testFailedCancelWhileHiddenResumesToCompletion();
   await testTermsAcceptanceResumesLiveRun();
   await testDeviceRouterKeepsLocalBridge();
   await testCancelDuringLocalStopsAfterInflightBatch();
