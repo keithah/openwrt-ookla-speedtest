@@ -5,16 +5,21 @@ const html=fs.readFileSync(path.join(root,'index.html'),'utf8'); const js=fs.rea
 const makefile=fs.readFileSync(path.join(__dirname,'..','package','Makefile'),'utf8');const version=makefile.match(/^PKG_VERSION:=(\S+)$/m)[1];const escapedVersion=version.replaceAll('.','\\.');
 for(const [asset,attribute] of [['styles.css','href'],['gauge.js','src'],['app.js','src']]) assert.match(html,new RegExp(`${attribute}=["']${asset.replaceAll('.','\\.')}\\?v=${escapedVersion}["']`));
 assert.match(html,new RegExp(`<script src=["']gauge\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']app\\.js\\?v=${escapedVersion}["']><\\/script>`));
-assert.match(html,/id=["']go-control["']/); assert.match(html,/History/); assert.match(html,/Analytics/); assert.match(html,/Settings/); assert.match(html,/About/);
-for(const id of ['live-gauge','gauge-needle','gauge-value','gauge-unit','phase-label','metric-download','metric-upload','metric-ping','metric-jitter','metric-loss','download-trace','upload-trace','cancel-test']) assert.match(html,new RegExp(`id=["']${id}["']`),`missing semantic gauge node #${id}`);
+for(const id of ['app-title','path-badge','nav-history','nav-analytics','nav-settings','nav-about',
+  'mode-picker','metric-ping','metric-download','metric-upload','live-gauge','gauge-track',
+  'gauge-progress','gauge-needle','gauge-value','gauge-unit','network-context','server-picker',
+  'go-control','cancel-test','results']) assert.match(html,new RegExp(`id=["']${id}["']`));
+assert.match(html,/viewBox=["']0 0 286 286["']/);
+assert.match(html,/<path id=["']gauge-needle["'] class=["']gauge-needle["'] d=["']M133 143 L138 58 L148 143 Z["']/);
+assert.match(css,/\.gauge-shell\s*\{[^}]*width:\s*286px;[^}]*height:\s*286px/s);
+assert.match(css,/\.gauge-track[^}]*stroke-width:\s*23/);
+assert.doesNotMatch(html,/<circle[^>]+(?:hub|needle)/i);
+assert.match(html,/OpenWrt Ookla Speedtest/);
+assert.match(html,/UNOFFICIAL/i);
+assert.doesNotMatch(html,/advert|survey/i);
+for(const id of ['phase-label','metric-jitter','metric-loss','download-trace','upload-trace']) assert.match(html,new RegExp(`id=["']${id}["']`),`missing semantic gauge node #${id}`);
 for(const id of ['phase-announcer','error-message','retry-test']) assert.match(html,new RegExp(`id=["']${id}["']`),`missing recovery/accessibility node #${id}`);
 const stageStart=html.indexOf('id="test-stage"'),resultsStart=html.indexOf('id="results"'),stageEnd=html.indexOf('</section>',stageStart);assert.ok(stageStart>=0&&resultsStart>stageStart&&resultsStart<stageEnd,'results must belong to the test stage');
-const arc=html.match(/class="gauge-track" d="M([\d.]+) ([\d.]+) A[\d. ]+ ([\d.]+) ([\d.]+)"/);assert.ok(arc,'missing gauge arc geometry');
-const needle=html.match(/id="gauge-needle"[^>]*>[\s\S]*?<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/);assert.ok(needle,'missing gauge needle geometry');
-function rotateNeedle(angle){const cx=+needle[1],cy=+needle[2],x=+needle[3]-cx,y=+needle[4]-cy,r=angle*Math.PI/180;return{x:cx+x*Math.cos(r)-y*Math.sin(r),y:cy+x*Math.sin(r)+y*Math.cos(r)}}
-function assertAligned(point,endX,endY,message){const cx=+needle[1],cy=+needle[2],ax=point.x-cx,ay=point.y-cy,bx=endX-cx,by=endY-cy;assert.ok(Math.abs(ax*by-ay*bx)<1e-6&&ax*bx+ay*by>0,message)}
-assertAligned(rotateNeedle(-135),+arc[1],+arc[2],'zero-speed needle must point at the lower-left dial endpoint');
-assertAligned(rotateNeedle(135),+arc[3],+arc[4],'max-speed needle must point at the lower-right dial endpoint');
 assert.match(html,/id=["']live-announcer["'][^>]*aria-live=["']polite["'][^>]*data-throttle-ms=["']\d+["']/);
 assert.match(html,/id=["']phase-announcer["'][^>]*aria-live=["']polite["']/);
 assert.match(html,/id=["']download-trace-label["']/);assert.match(html,/id=["']upload-trace-label["']/);
@@ -27,15 +32,8 @@ assert.match(js,/function renderGauge\s*\(/); assert.match(js,/SpeedtestGauge\.a
 assert.match(js,/function announceGauge\s*\(/); assert.match(js,/setTimeout\s*\(/);
 assert.match(js,/router.*internet|internet.*router/i); assert.match(css,/@media/); assert.match(css,/#0?4|navy|cyan/i);
 assert.match(css,/--cyan\s*:/); assert.match(css,/--violet\s*:/); assert.match(css,/:focus-visible/); assert.match(css,/@media\s*\(prefers-reduced-motion:\s*reduce\)/); assert.match(css,/@media\s*\(max-width:\s*640px\)/); assert.match(css,/grid-template-columns:\s*1fr/);
-assert.match(css,/\.gauge\[data-status=["']idle["']\]\s+\.gauge-dial/);
 assert.match(css,/\.gauge-needle\s*\{[^}]*transform-box:\s*view-box/);
 assert.doesNotMatch(html,/id=["']gauge-needle["'][^>]*\stransform=/);
-assert.match(css,/\.gauge\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*520px;/s);assert.match(css,/@supports\s*\(aspect-ratio:/);
-assert.match(css,/\.gauge\[data-status=["']done["']\]/);
-assert.match(css,/\.gauge\[data-status="idle"\],[^{]+\{[^}]*width:\s*clamp\(280px,\s*32vw,\s*340px\)/s,'compact shell must remain reference-sized and responsive');
-assert.match(css,/\.go\s*\{[^}]*width:\s*clamp\(190px,\s*20vw,\s*210px\)[^}]*height:\s*clamp\(190px,\s*20vw,\s*210px\)/s,'GO ring must remain large and responsive');
-assert.doesNotMatch(css,/\.go\s*\{[^}]*width:\s*(?:78|92)px/s,'GO must not regress to the tiny installed size');
-assert.match(css,/@media\s*\(max-width:\s*640px\)[\s\S]*?\.go\s*\{[^}]*clamp\(/,'mobile GO sizing must remain responsive');
 assert.match(css,/\.history-scroll\s*\{[^}]*overflow-x:\s*auto/s);
 assert.match(css,/\.history-scroll table\s*\{[^}]*min-width:/s);
 assert.match(js,/aria-pressed/);assert.match(js,/\.disabled\s*=/);

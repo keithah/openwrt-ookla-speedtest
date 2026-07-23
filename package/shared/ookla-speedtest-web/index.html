@@ -3,63 +3,81 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Unofficial Ookla Speedtest Web</title>
+  <title>OpenWrt Ookla Speedtest</title>
   <link rel="stylesheet" href="styles.css?v=1.2.0">
 </head>
 <body>
 <main id="app">
-  <header><div class="brand">SPEEDTEST <small>UNOFFICIAL</small></div><nav aria-label="Primary"><button data-view="history">History</button><button data-view="analytics">Analytics</button><button data-view="settings">Settings</button><button data-view="about">About</button></nav></header>
-  <section class="hero test-stage" id="test-stage">
-    <div class="mode-picker" role="group" aria-label="Test mode">
+  <header class="app-header">
+    <div class="brand-lockup">
+      <strong id="app-title">OpenWrt Ookla Speedtest</strong>
+      <small>UNOFFICIAL</small>
+    </div>
+    <nav class="icon-nav" aria-label="Primary">
+      <button id="nav-history" data-view="history" aria-label="History" data-tooltip="History">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M5.1 5.1A9 9 0 1 1 3 9m0-5v5h5"/></svg>
+      </button>
+      <button id="nav-analytics" data-view="analytics" aria-label="Analytics" data-tooltip="Analytics">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>
+      </button>
+      <button id="nav-settings" data-view="settings" aria-label="Settings" data-tooltip="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm0-5 1 2.2 2.4.5 1.8-1.5 2.1 2.1-1.5 1.8.5 2.4 2.2 1v3l-2.2 1-.5 2.4 1.5 1.8-2.1 2.1-1.8-1.5-2.4.5-1 2.2h-3l-1-2.2-2.4-.5-1.8 1.5-2.1-2.1 1.5-1.8-.5-2.4-2.2-1v-3l2.2-1 .5-2.4-1.5-1.8 2.1-2.1 1.8 1.5 2.4-.5 1-2.2Z"/></svg>
+      </button>
+      <button id="nav-about" data-view="about" aria-label="About" data-tooltip="About">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-10v6m0-10h.01"/></svg>
+      </button>
+    </nav>
+  </header>
+
+  <section class="test-stage" id="test-stage">
+    <div id="mode-picker" class="mode-picker" role="group" aria-label="Test mode">
       <button class="active" data-mode="router-internet" aria-pressed="true">Router → Internet</button>
       <button data-mode="device-router" aria-pressed="false">Device → Router</button>
       <button data-mode="both" aria-pressed="false">Both</button>
     </div>
-    <div class="route" id="route-label">Router → Internet</div>
-    <div class="primary-metrics" id="primary-metrics" hidden>
-      <div class="primary-metric download-metric">
-        <span class="metric-heading"><i aria-hidden="true">↓</i> Download</span>
-        <strong id="metric-download">—</strong><small>Mbps</small>
+
+    <div class="path-line">
+      <span id="path-badge">ROUTER PATH</span>
+      <strong id="route-label">Router → Internet</strong>
+    </div>
+
+    <div class="metrics-strip" id="primary-metrics" hidden>
+      <div class="metric ping-metric" aria-label="Ping">
+        <span>Ping</span><strong id="metric-ping">—</strong><small>ms</small>
+      </div>
+      <div class="metric download-metric" aria-label="Download">
+        <span>Download</span><strong id="metric-download">—</strong><small>Mbps</small>
         <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-labelledby="download-trace-label"><title id="download-trace-label">Download speed over time</title><path id="download-trace"></path></svg>
       </div>
-      <div class="primary-metric upload-metric">
-        <span class="metric-heading"><i aria-hidden="true">↑</i> Upload</span>
-        <strong id="metric-upload">—</strong><small>Mbps</small>
+      <div class="metric upload-metric" aria-label="Upload">
+        <span>Upload</span><strong id="metric-upload">—</strong><small>Mbps</small>
         <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-labelledby="upload-trace-label"><title id="upload-trace-label">Upload speed over time</title><path id="upload-trace"></path></svg>
       </div>
     </div>
     <div class="latency-strip" aria-label="Connection responsiveness" hidden>
-      <div><span>Ping</span><strong id="metric-ping">—</strong><small>ms</small></div>
       <div><span>Jitter</span><strong id="metric-jitter">—</strong><small>ms</small></div>
       <div><span>Loss</span><strong id="metric-loss">—</strong><small>%</small></div>
     </div>
-    <div id="live-gauge" class="gauge" data-phase="idle" data-status="idle" aria-busy="false" aria-describedby="status">
-      <svg id="gauge-dial" class="gauge-dial" viewBox="0 0 460 390" role="img" aria-labelledby="phase-label gauge-value gauge-unit" hidden>
-        <path class="gauge-track" d="M107 353 A174 174 0 1 1 353 353"></path>
-        <path class="gauge-progress" d="M107 353 A174 174 0 1 1 353 353" pathLength="100"></path>
-        <g class="gauge-ticks" aria-hidden="true">
-          <path d="M111 339l13-9 M92 257l16-2 M111 174l15 8 M170 114l8 15 M254 93l-2 16 M335 118l-9 13 M386 184l-15 7 M395 270l-16-3 M349 341l-13-10"></path>
-          <text x="105" y="372" data-gauge-scale="0">0</text>
-          <text x="78" y="270" data-gauge-scale="1">25</text>
-          <text x="140" y="137" data-gauge-scale="2">50</text>
-          <text x="310" y="137" data-gauge-scale="3">75</text>
-          <text x="348" y="372" data-gauge-scale="4">100</text>
-        </g>
-        <g id="gauge-needle" class="gauge-needle" aria-hidden="true">
-          <line x1="230" y1="230" x2="230" y2="72"></line>
-          <circle cx="230" cy="230" r="9"></circle>
-        </g>
+
+    <div id="live-gauge" class="gauge-shell" data-phase="idle" data-status="idle" data-shape="disc" aria-busy="false">
+      <svg id="gauge-dial" viewBox="0 0 286 286" role="img" aria-labelledby="phase-label gauge-value gauge-unit" hidden>
+        <defs>
+          <linearGradient id="download-gradient"><stop stop-color="#29d3c2"/><stop offset="1" stop-color="#36a7ff"/></linearGradient>
+          <linearGradient id="upload-gradient"><stop stop-color="#855cff"/><stop offset="1" stop-color="#ef5ad7"/></linearGradient>
+          <linearGradient id="ping-gradient"><stop stop-color="#4cc9ff"/><stop offset="1" stop-color="#5d86ff"/></linearGradient>
+        </defs>
+        <path id="gauge-track" class="gauge-track" d="M51.076 234.924 A130 130 0 1 1 234.924 234.924" pathLength="100"></path>
+        <path id="gauge-progress" class="gauge-progress" d="M51.076 234.924 A130 130 0 1 1 234.924 234.924" pathLength="100"></path>
+        <g id="gauge-labels" class="gauge-labels" aria-hidden="true"></g>
+        <path id="gauge-needle" class="gauge-needle" d="M133 143 L138 58 L148 143 Z" aria-hidden="true"></path>
       </svg>
       <div id="gauge-readout" class="gauge-readout" hidden>
-        <span id="phase-label">Ready</span>
-        <strong id="gauge-value">0</strong>
-        <small id="gauge-unit">Mbps</small>
+        <span id="phase-label">Ready</span><strong id="gauge-value">0</strong><small id="gauge-unit">Mbps</small>
       </div>
-      <div class="test-controls">
-        <button id="go-control" aria-label="Start selected speed tests" class="go">GO</button>
-        <button id="cancel-test" class="cancel" hidden>Cancel test</button>
-      </div>
+      <button id="go-control" class="go" aria-label="Start Router to Internet test">GO</button>
+      <button id="cancel-test" class="cancel" hidden>Cancel test</button>
     </div>
+
     <p id="status">Ready to test your connection</p>
     <p id="phase-announcer" aria-live="polite" class="sr-only"></p>
     <p id="live-announcer" aria-live="polite" data-throttle-ms="1000" class="sr-only"></p>
@@ -68,14 +86,23 @@
       <button id="retry-test" hidden>Retry</button>
     </div>
     <p class="scope-note" id="scope-note">Tests the router's connection to the internet—not this device.</p>
-    <div class="connection-details"><div><small>PROVIDER</small><strong id="isp-badge">ISP</strong></div><div><small>CONNECTION</small><strong id="network-badge">Connection</strong></div></div>
-    <p id="vpn-callout" class="vpn-callout" role="status"></p>
-    <div class="server"><div><small>INTERNET TEST SERVER</small><strong id="server-name">Auto</strong><span id="server-detail">Select a server</span></div><button id="server-picker">Change</button></div>
-    <section id="results" class="results" aria-live="polite"></section>
+
+    <div id="network-context" class="network-context" role="group" aria-label="Network context">
+      <div><small>PROVIDER</small><strong id="isp-badge">ISP</strong></div>
+      <div><small>CONNECTION</small><strong id="network-badge">Connection</strong></div>
+      <p id="vpn-callout" class="vpn-callout" role="status"></p>
+    </div>
+    <div class="server">
+      <div><small>INTERNET TEST SERVER</small><strong id="server-name">Auto</strong><span id="server-detail">Select a server</span></div>
+      <button id="server-picker">Change</button>
+    </div>
+    <section id="results" class="results final-result" aria-live="polite"></section>
   </section>
+
   <section id="view" aria-live="polite"></section>
   <div id="server-panel" hidden><input id="server-search" type="search" placeholder="Search servers" aria-label="Search servers"><div id="server-results" role="listbox" aria-label="Server results"></div></div>
 </main>
+
 <dialog id="terms-dialog" aria-labelledby="terms-title">
   <h2 id="terms-title">Ookla terms required</h2>
   <p>The internet test runs Ookla Speedtest CLI on your router. Before the first internet test, review and accept Ookla's <a href="https://www.speedtest.net/about/terms" target="_blank" rel="noopener">Terms of Use</a> and <a href="https://www.speedtest.net/about/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
