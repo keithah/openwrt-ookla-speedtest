@@ -132,6 +132,6 @@ dialog button { padding:9px 14px; }
   .network-context > div + div { border-top:1px solid var(--line); border-left:0; }
   .history-scroll table { min-width:620px; }
 }
-@media (max-width:480px) { .app-header { flex-direction:column; align-items:stretch; } .icon-nav { flex-wrap:wrap; } }
+@media (max-width:480px) { .app-header { flex-direction:column; align-items:stretch; } .brand-lockup strong { white-space:normal; overflow-wrap:anywhere; } .icon-nav { flex-wrap:wrap; } }
 @media (max-width:520px) { .metrics-strip,.final-result { grid-template-columns:1fr; } .gauge-shell { width:min(286px,calc(100vw - 56px)); height:auto; } .metric + .metric { border-top:1px solid var(--line); border-left:0; } }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
