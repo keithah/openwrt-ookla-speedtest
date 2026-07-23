@@ -87,10 +87,10 @@ def network_context(result_isp=None):
   except Exception: pass
  kind=name=None
  if any(n.startswith('tailscale') for n in lower_names) or 'tailscaled' in processes:
-  default_route=''
-  try: default_route=subprocess.check_output(['ip','route','show','default'],text=True,stderr=subprocess.DEVNULL,timeout=2)
+  selected_route=''
+  try: selected_route=subprocess.check_output(['ip','route','get','1.1.1.1'],text=True,stderr=subprocess.DEVNULL,timeout=2)
   except Exception: pass
-  kind='tailscale-exit' if re.search(r'(^|\s)dev\s+tailscale0(\s|$)',default_route) else 'tailscale'; name='Tailscale'
+  kind='tailscale-exit' if re.search(r'(^|\s)dev\s+tailscale0(\s|$)',selected_route) else 'tailscale'; name='Tailscale'
  elif any(n.startswith('speedify') for n in lower_names) or 'speedify' in processes: kind='speedify'; name='Speedify'
  elif any(n.startswith('wg') for n in lower_names): kind='wireguard'; name='WireGuard'
  elif any(n.startswith(('tun','tap')) for n in lower_names) or 'openvpn' in processes: kind='openvpn'; name='OpenVPN'

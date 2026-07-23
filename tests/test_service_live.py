@@ -202,15 +202,15 @@ class ServiceLiveTests(unittest.TestCase):
                     for index, name in enumerate(evidence["interfaces"], 1)
                 )
                 default_route = (
-                    "default dev %s\n" % evidence["default_interface"]
+                    "1.1.1.1 dev %s src 100.64.0.1\n" % evidence["default_interface"]
                     if evidence.get("default_interface")
-                    else "default via 192.0.2.1 dev wan\n"
+                    else "1.1.1.1 via 192.0.2.1 dev wan src 192.0.2.2\n"
                 )
 
                 def check_output(command, **_kwargs):
                     if command == ["ip", "-o", "link", "show"]:
                         return interfaces
-                    if command == ["ip", "route", "show", "default"]:
+                    if command == ["ip", "route", "get", "1.1.1.1"]:
                         return default_route
                     if command == ["uci", "-q", "get", "network.wan.provider"]:
                         raise subprocess.CalledProcessError(1, command)
@@ -233,12 +233,17 @@ class ServiceLiveTests(unittest.TestCase):
                 self.assertIn("possible_vpn", context)
                 self.assertIn("note", context)
 
-    def test_tailscale_without_default_route_is_not_an_exit_path(self):
+    def test_tailscale_with_competing_defaults_uses_effective_wan_route(self):
         def check_output(command, **_kwargs):
             if command == ["ip", "-o", "link", "show"]:
-                return "1: tailscale0: <UP>\n"
+                return "1: tailscale0: <UP>\n2: speedify: <UP>\n"
             if command == ["ip", "route", "show", "default"]:
-                return "default via 192.0.2.1 dev wan\n"
+                return (
+                    "default via 192.0.2.1 dev wan metric 10\n"
+                    "default dev tailscale0 metric 100\n"
+                )
+            if command == ["ip", "route", "get", "1.1.1.1"]:
+                return "1.1.1.1 via 192.0.2.1 dev wan src 192.0.2.2\n"
             if command == ["uci", "-q", "get", "network.wan.provider"]:
                 raise subprocess.CalledProcessError(1, command)
             self.fail("unexpected command: %r" % (command,))
@@ -252,6 +257,36 @@ class ServiceLiveTests(unittest.TestCase):
         self.assertEqual(
             context["note"], "Test reflects router traffic through Tailscale."
         )
+
+    def test_tailscale_effective_route_is_an_exit_path(self):
+        def check_output(command, **_kwargs):
+            if command == ["ip", "-o", "link", "show"]:
+                return "1: tailscale0: <UP>\n"
+            if command == ["ip", "route", "get", "1.1.1.1"]:
+                return "1.1.1.1 dev tailscale0 table 52 src 100.64.0.1\n"
+            self.fail("unexpected command: %r" % (command,))
+
+        with mock.patch.object(
+            self.mod.subprocess, "check_output", side_effect=check_output
+        ), mock.patch.object(self.mod.subprocess, "call", return_value=0):
+            context = self.mod.network_context()
+
+        self.assertEqual(context["vpn_kind"], "tailscale-exit")
+
+    def test_tailscale_route_lookup_failure_is_nonfatal_and_not_exit(self):
+        def check_output(command, **_kwargs):
+            if command == ["ip", "-o", "link", "show"]:
+                return "1: tailscale0: <UP>\n"
+            if command == ["ip", "route", "get", "1.1.1.1"]:
+                raise subprocess.CalledProcessError(2, command)
+            self.fail("unexpected command: %r" % (command,))
+
+        with mock.patch.object(
+            self.mod.subprocess, "check_output", side_effect=check_output
+        ), mock.patch.object(self.mod.subprocess, "call", return_value=0):
+            context = self.mod.network_context()
+
+        self.assertEqual(context["vpn_kind"], "tailscale")
 
     def test_network_context_warns_only_on_different_nonempty_isp_evidence(self):
         cases = [
