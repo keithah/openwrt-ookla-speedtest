@@ -67,6 +67,10 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertNotRegex(makefile, r"(?i)(wget|curl|https?://|Build/Compile.*download)")
 
     def test_package_metadata_and_modes(self):
+        makefile = (PACKAGE / "Makefile").read_text()
+        version = re.search(r"(?m)^PKG_VERSION:=(\S+)$", makefile).group(1)
+        release = re.search(r"(?m)^PKG_RELEASE:=(\S+)$", makefile).group(1)
+        expected_version = f"{version}-{release}"
         controls = {
             "ookla-speedtest-webd": ("ookla-speedtest-cli", "python3-light"),
             "luci-app-ookla-speedtest-web": ("ookla-speedtest-webd", "luci-base", "rpcd"),
@@ -77,7 +81,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             self.assertTrue(control.is_file(), control)
             text = control.read_text()
             self.assertIn("Package: " + name, text)
-            self.assertIn("Version: 1.2.0", text)
+            self.assertRegex(text, rf"(?m)^Version: {re.escape(expected_version)}$")
             for dep in deps:
                 self.assertRegex(text, rf"(?im)^Depends:.*\b{dep}\b")
         self.assertTrue((PACKAGE / "ookla-speedtest-webd/CONTROL/conffiles").is_file())

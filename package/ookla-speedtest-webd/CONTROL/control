@@ -1,5 +1,5 @@
 Package: ookla-speedtest-webd
-Version: 1.2.0
+Version: 1.3.0-1
 Architecture: all
 Depends: ookla-speedtest-cli, python3-light
 Description: Ookla speedtest web RPC helper
