@@ -5,6 +5,8 @@ const assert = require('assert');
 
 const root = path.join(__dirname, '..', 'package', 'shared', 'ookla-speedtest-web');
 const SpeedtestGauge = require(path.join(root, 'gauge.js'));
+const Results = require(path.join(root, 'results.js'));
+const Views = require(path.join(root, 'views.js'));
 
 class FakeNode {
   constructor() {
@@ -22,6 +24,7 @@ class FakeNode {
   removeAttribute(name) { delete this.attributes[name]; }
   hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name); }
   getAttribute(name) { return this.attributes[name] || null; }
+  click() { if (this.onclick) return this.onclick(); }
 }
 
 const ids = ['live-gauge', 'gauge-dial', 'gauge-readout', 'gauge-needle', 'gauge-value', 'gauge-unit',
@@ -42,6 +45,88 @@ const document = {
   querySelector(selector) { return selector === '.latency-strip' ? latency : null; },
   querySelectorAll(selector) { return selector === '[data-gauge-scale]' ? scaleLabels : []; }
 };
+Object.values(nodes).forEach(node => { node.ownerDocument = document; });
+function nodeText(node) {
+  return [node.textContent].concat(node.children.map(nodeText)).filter(Boolean).join(' ');
+}
+
+assert.equal(Results.networkSummary({ network_context: { vpn: true, vpn_kind: 'tailscale-exit', vpn_name: 'Tailscale' } }),
+  'Router → Internet via Tailscale exit node');
+assert.equal(Results.networkSummary({ network_context: { vpn: true, vpn_kind: 'speedify', vpn_name: 'Speedify' } }),
+  'Router → Internet via Speedify');
+assert.equal(Results.networkSummary({ network_context: { vpn: true, vpn_name: 'WireGuard' } }),
+  'Router → Internet via WireGuard');
+assert.equal(Results.networkSummary({ network_context: { possible_vpn: true } }),
+  'Router → Internet via possible VPN/proxy path');
+assert.equal(Results.networkSummary({ network_context: { vpn: false } }),
+  'Router → Internet via direct WAN path');
+
+Results.render(nodes.results, 'both', {
+  local: { download_mbps: 640, upload_mbps: 510, ping_ms: 2 },
+  internet: {
+    download_mbps: 920, upload_mbps: 850, ping_ms: 4,
+    idle_latency_ms: 4, download_latency_ms: 11, upload_latency_ms: 8,
+    jitter_ms: 1.2, loss_percent: 0, isp: 'Sonic',
+    interface: { name: 'wan', type: 'Ethernet' },
+    server: { name: 'San Jose', sponsor: 'Example Host', location: 'West Coast' }
+  }
+});
+const bothResults = nodeText(nodes.results);
+assert.match(bothResults, /Device → Router/);
+assert.match(bothResults, /640/);
+assert.match(bothResults, /not a public internet speed/i);
+assert.match(bothResults, /Router → Internet/);
+assert.match(bothResults, /920/);
+for (const expected of ['Idle latency 4 ms', 'Download latency 11 ms', 'Upload latency 8 ms',
+  'Jitter 1.2 ms', 'Loss 0 %', 'Sonic', 'wan', 'Ethernet', 'San Jose', 'Example Host', 'West Coast',
+  'direct WAN path']) assert.match(bothResults, new RegExp(expected));
+assert.match(nodes.results.className, /final-result/);
+
+Results.render(nodes.results, 'device-router', { local: { download_mbps: 12, ping_ms: 3 } });
+assert.match(nodeText(nodes.results), /Upload — Mbps/);
+
+let opened = null;
+Views.render(nodes.view, 'history', {
+  history: [
+    { id: 'i', date: 'Today', kind: 'router-internet', outcome: 'success', download_mbps: 100, upload_mbps: 20, ping_ms: 8 },
+    { id: 'l', date: 'Today', kind: 'device-router', outcome: 'error', error_code: 'local_io', download_mbps: 900 }
+  ]
+}, { openResult(row) { opened = row; } });
+const historyText = nodeText(nodes.view);
+assert.match(historyText, /Router → Internet/);
+assert.match(historyText, /Device → Router/);
+assert.match(historyText, /Failed \(local_io\)/);
+const openButtons = nodes.view.children[1].children[0].children
+  .map(row => row.children[row.children.length - 1])
+  .filter(cell => cell && cell.children[0] && cell.children[0].textContent === 'View result');
+assert.equal(openButtons.length, 2);
+openButtons[1].children[0].click();
+assert.equal(opened.id, 'l');
+
+Views.render(nodes.view, 'analytics', {
+  history: [
+    { kind: 'router-internet', outcome: 'success', download_mbps: 100 },
+    { kind: 'router-internet', outcome: 'error', download_mbps: 1000 },
+    { kind: 'device-router', outcome: 'success', download_mbps: 900 }
+  ]
+}, {});
+const analyticsText = nodeText(nodes.view);
+assert.match(analyticsText, /Router → Internet: 1 recorded test/);
+assert.match(analyticsText, /Download average 100 Mbps/);
+assert.match(analyticsText, /Device → Router: 1 recorded test/);
+assert.match(analyticsText, /Download average 900 Mbps/);
+assert.doesNotMatch(analyticsText, /Download average 500 Mbps/);
+
+Views.render(nodes.view, 'settings', {
+  settings: { server_name: 'San Jose', history_retention: 50, motion: 'reduced', terms_accepted: true }
+}, {});
+for (const expected of ['Server preference', 'San Jose', 'Retention', '50', 'Display options', 'reduced', 'Terms status', 'Accepted']) {
+  assert.match(nodeText(nodes.view), new RegExp(expected, 'i'));
+}
+
+Views.render(nodes.view, 'about', {}, {});
+assert.equal(nodeText(nodes.view).replace(/^About\s+/, ''),
+  "OpenWrt Ookla Speedtest (Unofficial) runs Router → Internet tests on the router through the separately installed Ookla CLI. The web packages do not contain the Ookla binary. Device → Router measures this browser's authenticated path to the router, not the public internet. GoodCloud opens this same authenticated router interface; the package does not expose another public service.");
 const window = {};
 vm.runInNewContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), {
   window, document, SpeedtestGauge, Promise, performance: { now: () => 0 }, Date, setTimeout, clearTimeout
@@ -88,7 +173,7 @@ assert.equal(nodes['metric-ping'].textContent, '8.4');
 assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 200));
 assert.equal(nodes['upload-trace'].attributes.d, '');
 assert.deepEqual(scaleLabels.map(node => node.textContent), ['0', '50', '100', '150', '200']);
-assert.equal(nodes['gauge-needle'].style.transform, 'rotate(-67.5deg)');
+assert.equal(nodes['gauge-needle'].style.transform, 'rotate(-33.75deg)');
 assert.equal(nodes['live-gauge'].style.values['--gauge-progress'], '25');
 
 Object.assign(app.state, { phase: 'upload', progress: 60, gaugeValue: 100, upload: 42.75, traces: { download: [10, 30, 50], upload: [20, 42.75] } });

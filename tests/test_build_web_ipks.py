@@ -47,7 +47,7 @@ class WebIpkBuilderTests(unittest.TestCase):
         luci = packages["luci-app-ookla-speedtest-web_1.2.0-1_all.ipk"][2]
         glinet = packages["gl-app-ookla-speedtest-web_1.2.0-1_all.ipk"][2]
         service = packages["ookla-speedtest-webd_1.2.0-1_all.ipk"][2]
-        for filename in ("index.html", "app.js", "gauge.js", "styles.css"):
+        for filename in ("index.html", "app.js", "gauge.js", "results.js", "views.js", "styles.css"):
             self.assertIn("www/luci-static/resources/ookla-speedtest-web/" + filename, luci)
             self.assertIn("www/ookla-speedtest-web/" + filename, glinet)
         self.assertEqual((0o755, True), luci["www/luci-static/resources/ookla-speedtest-web"])

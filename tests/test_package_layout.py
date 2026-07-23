@@ -30,6 +30,8 @@ class PackageLayoutContractTests(unittest.TestCase):
             "luci-app-ookla-speedtest-web/www/luci-static/resources/view/ookla-speedtest-web/main.js",
             "shared/ookla-speedtest-web/index.html",
             "shared/ookla-speedtest-web/app.js",
+            "shared/ookla-speedtest-web/results.js",
+            "shared/ookla-speedtest-web/views.js",
             "shared/ookla-speedtest-web/styles.css",
             "gl-app-ookla-speedtest-web/CONTROL/control",
             "gl-app-ookla-speedtest-web/CONTROL/postinst",
@@ -156,6 +158,8 @@ class PackageLayoutContractTests(unittest.TestCase):
         for asset, attribute in (
             ("styles.css", "href"),
             ("gauge.js", "src"),
+            ("results.js", "src"),
+            ("views.js", "src"),
             ("app.js", "src"),
         ):
             with self.subTest(asset=asset):

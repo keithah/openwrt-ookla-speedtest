@@ -1,10 +1,11 @@
 const fs=require('fs');const path=require('path');const assert=require('assert');
 const root=path.join(__dirname,'..','package','shared','ookla-speedtest-web');
-for(const f of ['index.html','gauge.js','app.js','styles.css']) assert.ok(fs.existsSync(path.join(root,f)),`missing ${f}`);
+for(const f of ['index.html','gauge.js','results.js','views.js','app.js','styles.css']) assert.ok(fs.existsSync(path.join(root,f)),`missing ${f}`);
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8'); const js=fs.readFileSync(path.join(root,'app.js'),'utf8'); const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');
+const renderers=['results.js','views.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
 const makefile=fs.readFileSync(path.join(__dirname,'..','package','Makefile'),'utf8');const version=makefile.match(/^PKG_VERSION:=(\S+)$/m)[1];const escapedVersion=version.replaceAll('.','\\.');
-for(const [asset,attribute] of [['styles.css','href'],['gauge.js','src'],['app.js','src']]) assert.match(html,new RegExp(`${attribute}=["']${asset.replaceAll('.','\\.')}\\?v=${escapedVersion}["']`));
-assert.match(html,new RegExp(`<script src=["']gauge\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']app\\.js\\?v=${escapedVersion}["']><\\/script>`));
+for(const [asset,attribute] of [['styles.css','href'],['gauge.js','src'],['results.js','src'],['views.js','src'],['app.js','src']]) assert.match(html,new RegExp(`${attribute}=["']${asset.replaceAll('.','\\.')}\\?v=${escapedVersion}["']`));
+assert.match(html,new RegExp(`<script src=["']gauge\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']results\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']views\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']app\\.js\\?v=${escapedVersion}["']><\\/script>`));
 for(const id of ['app-title','path-badge','nav-history','nav-analytics','nav-settings','nav-about',
   'mode-picker','metric-ping','metric-download','metric-upload','live-gauge','gauge-track',
   'gauge-progress','gauge-needle','gauge-value','gauge-unit','network-context','server-picker',
@@ -29,6 +30,7 @@ assert.match(html,/id=["']primary-metrics["'][^>]*hidden/);assert.match(html,/cl
 assert.match(html,/id=["']gauge-dial["']/);assert.match(html,/id=["']gauge-readout["']/);
 assert.match(html,/Router\s*→\s*Internet/); assert.match(html,/Device\s*→\s*Router/);
 assert.match(js,/subscribe\s*\(/); assert.match(js,/navigate\s*\(/); assert.match(js,/call\s*\(/); assert.match(js,/textContent/); assert.doesNotMatch(js,/innerHTML/);
+assert.match(renderers,/textContent/); assert.doesNotMatch(renderers,/innerHTML/);
 assert.match(js,/function renderGauge\s*\(/); assert.match(js,/SpeedtestGauge\.angleFor/); assert.match(js,/SpeedtestGauge\.tracePath/);
 assert.match(js,/function announceGauge\s*\(/); assert.match(js,/setTimeout\s*\(/);
 assert.match(js,/router.*internet|internet.*router/i); assert.match(css,/@media/); assert.match(css,/#0?4|navy|cyan/i);
