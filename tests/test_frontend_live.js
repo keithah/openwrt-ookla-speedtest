@@ -133,6 +133,11 @@ function nodesWithClass(node, className) {
   return [node].concat(node.children.flatMap(child => nodesWithClass(child, className))).filter(child => (child.className || '').split(/\s+/).includes(className));
 }
 
+function nodesWithAttribute(node, name, value) {
+  return [node].concat(node.children.flatMap(child => nodesWithAttribute(child, name, value)))
+    .filter(child => child.attributes[name] === value);
+}
+
 async function testLiveSamplesReachComplete() {
   const responses = [
     { ok: true, job_id: 'job-a' },
@@ -965,7 +970,7 @@ async function testErrorRetryUsesFailedModeAndConsumesUiRejections() {
   h.app.state.mode = 'device-router';
   await h.nodes['retry-test'].click();
   await flush();
-  assert.equal(settingsCalls, 2, 'Retry restarts the exact failed mode');
+  assert.equal(settingsCalls, 3, 'Startup, initial run, and retry each refresh settings');
   assert.equal(h.app.state.failedMode, 'router-internet');
 }
 
@@ -1336,6 +1341,85 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   }
 }
 
+async function testPersistedSettingsApplyBeforeStartupHistoryRender() {
+  const h = harness(method => {
+    if (method === 'settings') return Promise.resolve({ ok: true, default_mode: 'both', server_id: '42', history_retention: 50, motion: 'reduced', terms_accepted: true });
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    throw new Error('unexpected ' + method);
+  });
+  h.ready();
+  await flush();
+  assert.deepEqual(h.calls.map(call => call.method), ['settings', 'history']);
+  assert.equal(h.app.state.mode, 'both');
+  assert.equal(h.app.state.server.id, '42');
+  assert.equal(h.app.state.settings.history_retention, 50);
+  assert.equal(h.modeButtons[2].attributes['aria-pressed'], 'true');
+}
+
+async function testServerSelectionAndAutomaticResetArePersisted() {
+  const h = harness((method, params) => {
+    if (method === 'settings') return Promise.resolve({ ok: true, default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', terms_accepted: true });
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    if (method === 'servers') return Promise.resolve({ ok: true, servers: [{ id: 42, name: 'Chosen' }] });
+    if (method === 'save_settings') return Promise.resolve({ ok: true, default_mode: 'router-internet', server_id: params.server_id, history_retention: 100, motion: 'system', terms_accepted: true });
+    throw new Error('unexpected ' + method);
+  });
+  h.ready();
+  await flush();
+  await h.nodes['server-picker'].click();
+  await flush();
+  h.nodes['server-search'].value = 'chosen';
+  h.nodes['server-search'].listeners.input.call(h.nodes['server-search']);
+  await h.nodes['server-results'].children[1].onclick();
+  assert.equal(h.calls.filter(call => call.method === 'save_settings')[0].params.server_id, '42');
+  assert.equal(h.app.state.server.id, '42');
+  h.nodes['server-search'].value = '';
+  h.nodes['server-search'].listeners.input.call(h.nodes['server-search']);
+  await h.nodes['server-results'].children[0].onclick();
+  assert.equal(h.calls.filter(call => call.method === 'save_settings')[1].params.server_id, '');
+  assert.equal(h.app.state.server.id, undefined);
+}
+
+async function testSettingsControlsSaveAndUseValidatedResponse() {
+  let validated = { default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', terms_accepted: true };
+  const h = harness((method, params) => {
+    if (method === 'save_settings') { validated = Object.assign({}, validated, params); validated.history_retention = Number(validated.history_retention); return Promise.resolve(Object.assign({ ok: true }, validated)); }
+    return Promise.resolve({ ok: true, items: [] });
+  });
+  h.app.state.settings = { default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', terms_accepted: true };
+  h.app.state.view = 'settings';
+  h.app.render();
+  const mode = nodesWithAttribute(h.nodes.view, 'data-setting', 'default_mode')[0];
+  const retention = nodesWithAttribute(h.nodes.view, 'data-setting', 'history_retention')[0];
+  const motion = nodesWithAttribute(h.nodes.view, 'data-setting', 'motion')[0];
+  mode.value = 'both'; await mode.onchange();
+  retention.value = '50'; await retention.onchange();
+  motion.value = 'reduced'; await motion.onchange();
+  assert.deepEqual(h.calls.filter(call => call.method === 'save_settings').map(call => call.params), [
+    { default_mode: 'both' }, { history_retention: '50' }, { motion: 'reduced' }
+  ]);
+  assert.equal(h.app.state.mode, 'both');
+  assert.equal(h.app.state.settings.history_retention, 50);
+  assert.equal(h.app.state.settings.motion, 'reduced');
+}
+
+async function testMotionPreferenceAlwaysYieldsToBrowserAccessibility() {
+  for (const scenario of [
+    { motion: 'reduced', browser: false, immediate: true },
+    { motion: 'full', browser: true, immediate: true },
+    { motion: 'full', browser: false, immediate: false }
+  ]) {
+    const h = harness(method => method === 'settings'
+      ? Promise.resolve({ ok: true, default_mode: 'router-internet', server_id: '', history_retention: 100, motion: scenario.motion, terms_accepted: true })
+      : Promise.resolve({ ok: true, items: [] }), { reducedMotion: scenario.browser });
+    h.ready(); await flush();
+    h.app.state.activeJob = 'motion-job';
+    h.app.applyLiveStatus(status('motion-job', { phase: 'download', progress: .5, download_mbps: 100 }), 'motion-job');
+    const target = 'rotate(' + SpeedtestGauge.angleFor(100, 'download') + 'deg)';
+    assert.equal(h.nodes['gauge-needle'].style.transform === target, scenario.immediate);
+  }
+}
+
 (async function main() {
   await testLiveSamplesReachComplete();
   await testResultEventWaitsForEnrichedTerminalState();
@@ -1387,5 +1471,9 @@ async function testMalformedNumericSamplesBecomeStableErrors() {
   await testStaleFailureCannotErrorNewRunOrRetry();
   await testMalformedNumericSamplesBecomeStableErrors();
   await testTraceBoundsWorkBeforeValidation();
+  await testPersistedSettingsApplyBeforeStartupHistoryRender();
+  await testServerSelectionAndAutomaticResetArePersisted();
+  await testSettingsControlsSaveAndUseValidatedResponse();
+  await testMotionPreferenceAlwaysYieldsToBrowserAccessibility();
   console.log('frontend live polling ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });

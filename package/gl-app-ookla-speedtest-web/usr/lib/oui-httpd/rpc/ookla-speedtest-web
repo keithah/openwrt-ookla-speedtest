@@ -38,6 +38,7 @@ function M.history(params) return invoke("history", params) end
 function M.delete_history(params) return invoke("delete_history", params) end
 function M.clear_history(params) return invoke("clear_history", params) end
 function M.settings(params) return invoke("settings", params) end
+function M.save_settings(params) return invoke("save_settings", params) end
 function M.accept_terms(params) return invoke("accept_terms", params) end
 function M.begin_local(params) return invoke("begin_local", params) end
 function M.cancel_local(params) return invoke("cancel_local", params) end

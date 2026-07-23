@@ -218,7 +218,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         text = acl.read_text()
         self.assertNotIn('"*"', text)
         self.assertNotRegex(text, r"network|0\.0\.0\.0|listen")
-        methods = {"status", "servers", "start", "start_live", "live_status", "cancel_live", "history", "delete_history", "clear_history", "settings", "begin_local", "cancel_local", "local_download", "local_upload", "record_local"}
+        methods = {"status", "servers", "start", "start_live", "live_status", "cancel_live", "history", "delete_history", "clear_history", "settings", "save_settings", "begin_local", "cancel_local", "local_download", "local_upload", "record_local"}
         blob = json.dumps(data)
         for method in methods:
             self.assertIn(method, blob)
@@ -230,7 +230,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertEqual(list(acl_data["read"]["ubus"]), [rpcd_object])
         self.assertEqual(list(acl_data["write"]["ubus"]), [rpcd_object])
         self.assertEqual(acl_data["read"]["ubus"][rpcd_object], ["status", "servers", "history"])
-        self.assertEqual(acl_data["write"]["ubus"][rpcd_object], ["start", "start_live", "live_status", "cancel_live", "delete_history", "clear_history", "settings", "accept_terms", "begin_local", "cancel_local", "local_download", "local_upload", "record_local"])
+        self.assertEqual(acl_data["write"]["ubus"][rpcd_object], ["start", "start_live", "live_status", "cancel_live", "delete_history", "clear_history", "settings", "save_settings", "accept_terms", "begin_local", "cancel_local", "local_download", "local_upload", "record_local"])
 
     def test_rpcd_live_method_schemas_are_exact(self):
         rpcd = PACKAGE / "luci-app-ookla-speedtest-web/usr/libexec/rpcd/ookla-speedtest-web"
@@ -241,6 +241,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             text=True,
         )
         methods = json.loads(result.stdout)
+        self.assertEqual(methods["save_settings"], {"default_mode": "", "server_id": "", "history_retention": "", "motion": ""})
         self.assertEqual(methods["start_live"], {"server_id": ""})
         self.assertEqual(methods["live_status"], {"job_id": ""})
         self.assertEqual(methods["cancel_live"], {"job_id": ""})
@@ -249,6 +250,16 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertEqual(methods["local_download"], {"run_id": "", "bytes": 0})
         self.assertEqual(methods["local_upload"], {"run_id": "", "data": ""})
         self.assertEqual(methods["record_local"], {"run_id": "", "download_mbps": "", "upload_mbps": "", "ping_ms": ""})
+
+    def test_gl_bridge_exposes_fixed_save_settings_method(self):
+        bridge = PACKAGE / "gl-app-ookla-speedtest-web/usr/lib/oui-httpd/rpc/ookla-speedtest-web"
+        text = bridge.read_text()
+        self.assertIn('function M.save_settings(params) return invoke("save_settings", params) end', text)
+
+    def test_luci_controller_declares_fixed_save_settings_parameters(self):
+        controller = PACKAGE / "luci-app-ookla-speedtest-web/www/luci-static/resources/view/ookla-speedtest-web/main.js"
+        text = controller.read_text()
+        self.assertRegex(text, r"save_settings:\['default_mode','server_id','history_retention','motion'\]")
 
 
 if __name__ == "__main__":

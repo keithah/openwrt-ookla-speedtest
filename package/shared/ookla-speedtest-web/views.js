@@ -125,12 +125,31 @@
     add(doc, container, 'p', label + ': ' + (value == null || value === '' ? 'Automatic' : String(value)));
   }
 
-  function renderSettings(doc, container, state) {
+  function selectSetting(doc, container, label, name, value, choices, actions) {
+    var row = doc.createElement('label');
+    add(doc, row, 'span', label);
+    var select = doc.createElement('select');
+    select.setAttribute('data-setting', name);
+    choices.forEach(function(choice) {
+      var option = doc.createElement('option');
+      option.value = String(choice[0]);
+      option.textContent = choice[1];
+      if (String(choice[0]) === String(value)) option.selected = true;
+      select.appendChild(option);
+    });
+    select.value = String(value);
+    select.onchange = function() { return actions.saveSettings ? actions.saveSettings((function(){var change={};change[name]=select.value;return change})()) : undefined; };
+    row.appendChild(select);
+    container.appendChild(row);
+  }
+
+  function renderSettings(doc, container, state, actions) {
     var settings = state.settings || {};
     add(doc, container, 'h2', 'Settings');
     setting(doc, container, 'Server preference', settings.server_name || settings.server_id || state.server && (state.server.name || state.server.id));
-    setting(doc, container, 'Retention', settings.history_retention != null ? settings.history_retention : settings.retention);
-    setting(doc, container, 'Display options', settings.motion || settings.units || 'System defaults');
+    selectSetting(doc, container, 'Default mode', 'default_mode', settings.default_mode || 'router-internet', [['router-internet','Router → Internet'],['device-router','Device → Router'],['both','Both']], actions);
+    selectSetting(doc, container, 'Retention', 'history_retention', settings.history_retention || 100, [[25,'25'],[50,'50'],[100,'100'],[250,'250']], actions);
+    selectSetting(doc, container, 'Display options', 'motion', settings.motion || 'system', [['system','System'],['full','Full'],['reduced','Reduced']], actions);
     setting(doc, container, 'Terms status', settings.terms_accepted ? 'Accepted' : 'Not accepted');
   }
 
@@ -147,7 +166,7 @@
     actions = actions || {};
     if (view === 'history') renderHistory(doc, container, state, actions);
     else if (view === 'analytics') renderAnalytics(doc, container, state);
-    else if (view === 'settings') renderSettings(doc, container, state);
+    else if (view === 'settings') renderSettings(doc, container, state, actions);
     else if (view === 'about') renderAbout(doc, container);
   }
 

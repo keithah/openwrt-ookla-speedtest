@@ -7,7 +7,7 @@ cat > "$ROOT/bin/speedtest" <<'SH'
 printf '%s' '{"type":"result","ping":{"latency":12},"download":{"bandwidth":1000000},"upload":{"bandwidth":500000},"server":{"id":42,"name":"Test","sponsor":"Acme","location":"Town"},"isp":"ISP"}'
 SH
 chmod +x "$ROOT/bin/speedtest"
-export OOKLA_WEBD_RUN_DIR="$ROOT/run" OOKLA_WEBD_HISTORY="$ROOT/etc/history.jsonl" OOKLA_SPEEDTEST_BIN="$ROOT/bin/speedtest"
+export OOKLA_WEBD_RUN_DIR="$ROOT/run" OOKLA_WEBD_HISTORY="$ROOT/etc/history.jsonl" OOKLA_WEBD_SETTINGS="$ROOT/etc/settings.json" OOKLA_SPEEDTEST_BIN="$ROOT/bin/speedtest"
 SVC=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd
 WORKER=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd-worker
 [ "$(grep -c -- '--progress-update-interval=100' "$WORKER")" -eq 1 ]
@@ -24,6 +24,12 @@ printf '{"run_id":"%s","bytes":1024}\n' "$bridge_run_id" | OOKLA_WEBD_HELPER="$S
 printf '{"run_id":"%s"}\n' "$bridge_run_id" | OOKLA_WEBD_HELPER="$SVC" "$RPC" call cancel_local | grep -q '"state":"cancelled"'
 out=$(printf '%s\n' '{"method":"status"}' | "$SVC"); echo "$out" | grep -q '"state"'
 printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"terms_accepted":false'
+printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"default_mode":"router-internet"'
+printf '%s\n' '{"method":"save_settings","default_mode":"both","server_id":"42","history_retention":"50","motion":"full","unapproved":"discard-me"}' | "$SVC" | grep -q '"ok":true'
+printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"default_mode":"both"'
+python3 -c 'import json,os; row=json.load(open(os.environ["OOKLA_WEBD_SETTINGS"])); assert row == {"default_mode":"both","server_id":"42","history_retention":50,"motion":"full"}'
+printf '%s\n' '{"method":"save_settings","default_mode":"invalid"}' | "$SVC" | grep -q 'invalid_settings'
+printf '%s\n' '{"method":"save_settings","server_id":"123456789012345678901"}' | "$SVC" | grep -q 'invalid_settings'
 printf '%s\n' '{"method":"start","server_id":"42"}' | "$SVC" | grep -q 'terms_required'
 printf '%s\n' '{"method":"accept_terms"}' | "$SVC" | grep -q '"ok":true'
 [ -f "$ROOT/etc/terms-accepted" ]
@@ -80,9 +86,11 @@ printf '%s\n' '{"method":"servers"}' | "$SVC" | grep -q 'server_error'
 # nonzero valid JSON
 printf '#!/bin/sh\nprintf "{}"; exit 3\n' > "$ROOT/bin/speedtest"; chmod +x "$ROOT/bin/speedtest"
 printf '%s\n' '{"method":"start"}' | "$SVC" | grep -q 'speedtest_failed'
-# retention bound
-export OOKLA_HISTORY_RETENTION=1
+# persisted retention keeps the newest records
 printf '%s\n' '{"method":"clear_history"}' | "$SVC" >/dev/null
-printf '%s\n' '{"method":"start"}' | "$SVC" >/dev/null || true
-printf '%s\n' '{"method":"start"}' | "$SVC" >/dev/null || true
-[ "$(wc -l < "$OOKLA_WEBD_HISTORY")" -le 1 ]
+i=1
+while [ "$i" -le 51 ]; do
+ printf '{"method":"record_local","download_mbps":"%s","upload_mbps":"1","ping_ms":"1"}\n' "$i" | "$SVC" >/dev/null
+ i=$((i+1))
+done
+printf '%s\n' '{"method":"history"}' | "$SVC" | python3 -c 'import json,sys; rows=json.load(sys.stdin)["items"]; assert len(rows) == 50; assert rows[0]["download_mbps"] == 2; assert rows[-1]["download_mbps"] == 51'
