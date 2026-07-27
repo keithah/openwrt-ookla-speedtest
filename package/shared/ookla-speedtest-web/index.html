@@ -46,22 +46,25 @@
       </div>
     </div>
 
-    <div id="live-gauge" class="gauge-shell" data-phase="idle" data-status="idle" data-shape="disc" aria-busy="false">
-      <svg id="gauge-dial" viewBox="0 0 286 286" role="img" aria-labelledby="phase-label gauge-value gauge-unit" hidden>
-        <defs>
-          <linearGradient id="download-gradient"><stop stop-color="#29d3c2"/><stop offset="1" stop-color="#36a7ff"/></linearGradient>
-          <linearGradient id="upload-gradient"><stop stop-color="#855cff"/><stop offset="1" stop-color="#ef5ad7"/></linearGradient>
-          <linearGradient id="ping-gradient"><stop stop-color="#4cc9ff"/><stop offset="1" stop-color="#5d86ff"/></linearGradient>
-        </defs>
-        <path id="gauge-track" class="gauge-track" d="M51.076 234.924 A130 130 0 1 1 234.924 234.924" pathLength="100"></path>
-        <path id="gauge-progress" class="gauge-progress" d="M51.076 234.924 A130 130 0 1 1 234.924 234.924" pathLength="100"></path>
-        <g id="gauge-labels" class="gauge-labels" aria-hidden="true"></g>
-      </svg>
-      <div id="gauge-readout" class="gauge-readout" hidden>
-        <span id="phase-label">Ready</span><strong id="gauge-value">0</strong><small id="gauge-unit">Mbps</small>
+    <div class="gauge-row">
+      <div id="live-gauge" class="gauge-shell" data-phase="idle" data-status="idle" data-shape="disc" aria-busy="false">
+        <svg id="gauge-dial" viewBox="0 0 286 286" role="img" aria-labelledby="phase-label gauge-value gauge-unit" hidden>
+          <defs>
+            <linearGradient id="download-gradient"><stop stop-color="#29d3c2"/><stop offset="1" stop-color="#36a7ff"/></linearGradient>
+            <linearGradient id="upload-gradient"><stop stop-color="#855cff"/><stop offset="1" stop-color="#ef5ad7"/></linearGradient>
+            <linearGradient id="ping-gradient"><stop stop-color="#4cc9ff"/><stop offset="1" stop-color="#5d86ff"/></linearGradient>
+          </defs>
+          <path id="gauge-track" class="gauge-track" d="M51.076 234.924 A130 130 0 1 1 234.924 234.924" pathLength="100"></path>
+          <path id="gauge-progress" class="gauge-progress" d="M51.076 234.924 A130 130 0 1 1 234.924 234.924" pathLength="100"></path>
+          <g id="gauge-labels" class="gauge-labels" aria-hidden="true"></g>
+        </svg>
+        <div id="gauge-readout" class="gauge-readout" hidden>
+          <span id="phase-label">Ready</span><strong id="gauge-value">0</strong><small id="gauge-unit">Mbps</small>
+        </div>
+        <button id="go-control" class="go" aria-label="Start Router to Internet test">GO</button>
+        <button id="cancel-test" class="cancel" hidden>Cancel test</button>
       </div>
-      <button id="go-control" class="go" aria-label="Start Router to Internet test">GO</button>
-      <button id="cancel-test" class="cancel" hidden>Cancel test</button>
+      <section id="results" class="results final-result" aria-live="polite"></section>
     </div>
 
     <div class="latency-strip" aria-label="Connection responsiveness" hidden>
@@ -89,8 +92,6 @@
       <p id="error-message" hidden></p>
       <button id="retry-test" hidden>Retry</button>
     </div>
-    <p class="scope-note" id="scope-note">Tests the router's connection to the internet—not this device.</p>
-
     <div id="network-context" class="network-context" role="group" aria-label="Network context">
       <div><small>PROVIDER</small><strong id="isp-badge">ISP</strong></div>
       <div><small>CONNECTION</small><strong id="network-badge">Connection</strong></div>
@@ -100,7 +101,6 @@
       <div><small>INTERNET TEST SERVER</small><strong id="server-name">Auto</strong><span id="server-detail">Select a server</span></div>
       <button id="server-picker">Change</button>
     </div>
-    <section id="results" class="results final-result" aria-live="polite"></section>
   </section>
 
   <section id="view" aria-live="polite"></section>

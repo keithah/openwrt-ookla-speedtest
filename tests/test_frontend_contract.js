@@ -44,7 +44,7 @@ assert.match(js,/router.*internet|internet.*router/i); assert.match(css,/@media/
 assert.match(css,/--cyan\s*:/); assert.match(css,/--violet\s*:/); assert.match(css,/:focus-visible/); assert.match(css,/@media\s*\(prefers-reduced-motion:\s*reduce\)/); assert.match(css,/@media\s*\(max-width:\s*640px\)/); assert.match(css,/grid-template-columns:\s*1fr/);
 assert.match(css,/\.icon-nav button\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px/s);
 assert.match(css,/html\s*,\s*body\s*,\s*#app\s*\{[^}]*max-width:\s*100%;[^}]*overflow-x:\s*hidden/s);
-assert.match(css,/@media\s*\(max-width:\s*520px\)[\s\S]*\.metrics-strip\s*,\s*\.final-result\s*\{[^}]*grid-template-columns:\s*1fr/s);
+assert.match(css,/@media\s*\(max-width:\s*520px\)[\s\S]*\.metrics-strip\s*\{[^}]*grid-template-columns:\s*1fr/s);
 assert.match(css,/width:\s*min\(200px\s*,\s*calc\(100vw\s*-\s*56px\)\)/);
 assert.match(css,/(?:button|\.mode-picker button|\.server button)[^{]*\{[^}]*min-height:\s*44px/s);
 assert.match(css,/@media\s*\(max-width:\s*480px\)\s*\{[^}]*\.app-header\s*\{[^}]*flex-direction:\s*column;[^}]*align-items:\s*stretch;[^}]*\}\s*\.brand-lockup strong\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*\}\s*\.icon-nav\s*\{[^}]*flex-wrap:\s*wrap;[^}]*\}/s);

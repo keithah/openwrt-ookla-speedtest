@@ -66,7 +66,7 @@ function harness(handler, options) {
   const ids = ['test-stage', 'live-graph', 'live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
     'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
     'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
-    'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
+    'route-label', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
     'server-detail', 'results', 'view', 'terms-dialog', 'accept-terms', 'server-picker', 'server-panel',
     'server-search', 'server-results', 'phase-announcer', 'error-message', 'retry-test', 'terms-title'];
   const nodes = Object.fromEntries(ids.map(id => [id, new FakeNode()]));

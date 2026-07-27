@@ -31,7 +31,7 @@ class FakeNode {
 const ids = ['test-stage', 'live-graph', 'live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
   'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
   'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
-  'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
+  'route-label', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
   'server-detail', 'results', 'view', 'phase-announcer', 'error-message', 'retry-test', 'terms-dialog',
   'accept-terms', 'server-picker', 'server-panel', 'server-search', 'server-results'];
 const nodes = Object.fromEntries(ids.map(id => [id, new FakeNode()]));
@@ -193,7 +193,9 @@ assert.equal(nodes['live-gauge'].attributes['aria-busy'], 'true');
 assert.equal(nodes['gauge-value'].textContent, '50');
 assert.equal(nodes['metric-download'].textContent, '50.25');
 assert.equal(nodes['metric-ping'].textContent, '8.4');
-assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 1000));
+assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 50));
+assert.notEqual(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 1000),
+  'the live graph auto-scales to the actual sample range instead of the gauge\'s fixed 1000 Mbps scale, or real-world speeds render as a flat line pinned to one edge');
 assert.equal(nodes['upload-trace'].attributes.d, '');
 assert.deepEqual(nodes['gauge-labels'].children.map(node => node.textContent), SpeedtestGauge.labelsFor('download').map(String));
 assert.equal(nodes['live-gauge'].attributes['data-shape'], 'arc');
@@ -210,7 +212,7 @@ assert.equal(nodes['live-gauge'].attributes['data-phase'], 'upload');
 assert.equal(nodes['phase-label'].textContent, 'Upload');
 assert.equal(nodes['phase-announcer'].textContent, 'Upload phase');
 assert.equal(nodes['metric-upload'].textContent, '42.75');
-assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 1000));
+assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 50));
 assert.equal(nodes['metric-download'].attributes['aria-current'], undefined, 'completed metric remains visible but inactive');
 assert.equal(nodes['metric-upload'].attributes['aria-current'], 'true');
 
@@ -226,8 +228,8 @@ assert.equal(nodes['primary-metrics'].hidden, false, 'complete retains throughpu
 assert.equal(latency.hidden, false, 'complete retains latency metrics');
 assert.equal(nodes['metric-download'].textContent, '100');
 assert.equal(nodes['metric-upload'].textContent, '42.75');
-assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 1000));
-assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 1000));
+assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 50));
+assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 50));
 assert.equal(nodes['phase-label'].textContent, 'Complete');
 assert.equal(nodes['phase-announcer'].textContent, 'Test complete');
 assert.equal(nodes['live-gauge'].attributes['aria-busy'], 'false');
