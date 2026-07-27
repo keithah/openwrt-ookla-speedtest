@@ -19,7 +19,7 @@ define Package/luci-app-ookla-speedtest-web
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
   TITLE:=LuCI web interface for Ookla Speedtest
-  DEPENDS:=+ookla-speedtest-webd +luci-base +rpcd
+  DEPENDS:=+ookla-speedtest-webd +luci-base +rpcd +luci-theme-bootstrap
 endef
 
 define Package/gl-app-ookla-speedtest-web

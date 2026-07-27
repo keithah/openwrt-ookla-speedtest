@@ -73,7 +73,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         expected_version = f"{version}-{release}"
         controls = {
             "ookla-speedtest-webd": ("ookla-speedtest-cli", "python3-light"),
-            "luci-app-ookla-speedtest-web": ("ookla-speedtest-webd", "luci-base", "rpcd"),
+            "luci-app-ookla-speedtest-web": ("ookla-speedtest-webd", "luci-base", "rpcd", "luci-theme-bootstrap"),
             "gl-app-ookla-speedtest-web": ("luci-app-ookla-speedtest-web",),
         }
         for name, deps in controls.items():
