@@ -288,6 +288,27 @@ class ServiceLiveTests(unittest.TestCase):
 
         self.assertEqual(context["vpn_kind"], "tailscale")
 
+    def test_route_confirmed_tunnel_wins_over_unrelated_tailscale_presence(self):
+        # Tailscale can be installed and running purely for remote router admin
+        # access while a completely different tunnel actually carries this
+        # test's traffic. The interface named in `ip route get` is authoritative;
+        # it must not be overridden by Tailscale merely being present elsewhere.
+        def check_output(command, **_kwargs):
+            if command == ["ip", "-o", "link", "show"]:
+                return "1: tailscale0: <UP>\n2: connectify0: <UP>\n"
+            if command == ["ip", "route", "get", "1.1.1.1"]:
+                return "1.1.1.1 dev connectify0 table 9910 src 10.202.0.2\n"
+            self.fail("unexpected command: %r" % (command,))
+
+        with mock.patch.object(
+            self.mod.subprocess, "check_output", side_effect=check_output
+        ), mock.patch.object(self.mod.subprocess, "call", return_value=0):
+            context = self.mod.network_context()
+
+        self.assertEqual(context["vpn_kind"], "tunnel")
+        self.assertTrue(context["vpn"])
+        self.assertNotIn("Tailscale", context["note"])
+
     def test_network_context_warns_only_on_different_nonempty_isp_evidence(self):
         cases = [
             ("Public ISP", "Router ISP", True),
@@ -305,6 +326,8 @@ class ServiceLiveTests(unittest.TestCase):
                         return "1: wan: <UP>\n"
                     if command == ["ip", "route", "show", "default"]:
                         return "default via 192.0.2.1 dev wan\n"
+                    if command == ["ip", "route", "get", "1.1.1.1"]:
+                        return "1.1.1.1 via 192.0.2.1 dev wan src 192.0.2.2\n"
                     if command == ["uci", "-q", "get", "network.wan.provider"]:
                         if configured_provider is None:
                             raise subprocess.CalledProcessError(1, command)
@@ -326,7 +349,7 @@ class ServiceLiveTests(unittest.TestCase):
             ("rmnet_mhi0", "Cellular"), ("wwan0", "Cellular"), ("usb0", "Cellular"),
             ("eth0", "Ethernet"), ("lan1", "Ethernet"),
             ("wlan0", "Wi-Fi"), ("ra0", "Wi-Fi"),
-            ("tailscale0", "VPN"), ("wg0", "VPN"), ("tun0", "VPN"),
+            ("tailscale0", "VPN"), ("wg0", "VPN"), ("tun0", "VPN"), ("connectify0", "VPN"),
             ("", None), (None, None), ("mystery0", None),
         ]
         for name, expected in cases:

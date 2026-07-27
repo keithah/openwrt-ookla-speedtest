@@ -145,16 +145,26 @@ def network_context(result_isp=None):
   try:
    if subprocess.call(['pidof',marker],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)==0: processes.add(marker)
   except Exception: pass
+ selected_route=''
+ try: selected_route=subprocess.check_output(['ip','route','get','1.1.1.1'],text=True,stderr=subprocess.DEVNULL,timeout=2)
+ except Exception: pass
+ route_match=re.search(r'(?:^|\s)dev\s+(\S+)',selected_route)
+ route_dev=route_match.group(1).lower() if route_match else None
  kind=name=None
- if any(n.startswith('tailscale') for n in lower_names) or 'tailscaled' in processes:
-  selected_route=''
-  try: selected_route=subprocess.check_output(['ip','route','get','1.1.1.1'],text=True,stderr=subprocess.DEVNULL,timeout=2)
-  except Exception: pass
-  kind='tailscale-exit' if re.search(r'(^|\s)dev\s+tailscale0(\s|$)',selected_route) else 'tailscale'; name='Tailscale'
+ # The interface actually carrying this test's traffic is authoritative: if it
+ # matches a known tunnel pattern, trust that over mere presence elsewhere on
+ # the router (e.g. Tailscale running for remote admin access while a
+ # different tunnel/VPN is the one actually routing this test).
+ if route_dev=='tailscale0': kind='tailscale-exit'; name='Tailscale'
+ elif route_dev and route_dev.startswith('speedify'): kind='speedify'; name='Speedify'
+ elif route_dev and route_dev.startswith('wg'): kind='wireguard'; name='WireGuard'
+ elif route_dev and route_dev.startswith(('tun','tap')): kind='openvpn'; name='OpenVPN'
+ elif route_dev and (route_dev=='zt0' or route_dev.startswith(('vpn','vti','ipsec','connectify')) or 'tunnel' in route_dev): kind='tunnel'; name='VPN tunnel'
+ elif any(n.startswith('tailscale') for n in lower_names) or 'tailscaled' in processes: kind='tailscale'; name='Tailscale'
  elif any(n.startswith('speedify') for n in lower_names) or 'speedify' in processes: kind='speedify'; name='Speedify'
  elif any(n.startswith('wg') for n in lower_names): kind='wireguard'; name='WireGuard'
  elif any(n.startswith(('tun','tap')) for n in lower_names) or 'openvpn' in processes: kind='openvpn'; name='OpenVPN'
- elif any(n=='zt0' or n.startswith(('vpn','vti','ipsec')) or 'tunnel' in n for n in lower_names): kind='tunnel'; name='VPN tunnel'
+ elif any(n=='zt0' or n.startswith(('vpn','vti','ipsec','connectify')) or 'tunnel' in n for n in lower_names): kind='tunnel'; name='VPN tunnel'
  labels={
   'tailscale-exit':'Test reflects router traffic through a Tailscale exit node.',
   'tailscale':'Test reflects router traffic through Tailscale.',
@@ -177,7 +187,7 @@ def classify_connection(name):
  if re.match(r'^(wwan|rmnet|qmi|mhi|usb\d)',name): return 'Cellular'
  if re.match(r'^(eth|lan)',name): return 'Ethernet'
  if re.match(r'^(wlan|ra\d|rai\d|mesh|ath|wl)',name): return 'Wi-Fi'
- if re.match(r'^(wg|tun|tap|tailscale|zt|ipsec)',name): return 'VPN'
+ if re.match(r'^(wg|tun|tap|tailscale|zt|ipsec|vpn|vti|connectify)',name): return 'VPN'
  return None
 def connection_label(interface_name,vpn):
  kind=classify_connection(interface_name)

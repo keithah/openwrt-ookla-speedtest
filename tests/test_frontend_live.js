@@ -1721,6 +1721,30 @@ async function testNetworkPreviewPopulatesBeforeFirstRun() {
   assert.equal(h2.app.state.autoServer, null, 'explicit selection does not populate the auto-server preview');
 }
 
+async function testNetworkPreviewStillAppliesIfItResolvesAfterGoIsPressed() {
+  // A fast GO click can start a test before the one-shot startup preview
+  // resolves. The preview must not be silently dropped in that case, or the
+  // PROVIDER/CONNECTION badges are stuck on placeholders for the rest of the
+  // session even though the test never actually needed to block on them.
+  const preview = {
+    ok: true, isp: 'T-Mobile USA', interface: { name: 'rmnet_mhi0' },
+    server: { id: 6199, name: 'Wowrack', location: 'Seattle, WA' },
+    network_context: { note: 'No VPN path detected; test reflects the router WAN path.' }
+  };
+  const deferred = {};
+  const previewPromise = new Promise((resolve) => { deferred.resolve = resolve; });
+  const h = harness(() => Promise.resolve({ ok: true, items: [] }), { networkInfo: () => previewPromise });
+  h.ready();
+  await flush();
+  assert.equal(h.app.state.isp, 'ISP', 'the preview has not resolved yet');
+  h.app.state.status = 'running';
+  h.app.render();
+  deferred.resolve(preview);
+  await flush();
+  assert.equal(h.app.state.isp, 'T-Mobile USA', 'a late-arriving preview still applies while a test is running');
+  assert.equal(h.app.state.connection, 'rmnet_mhi0');
+}
+
 (async function main() {
   await testLiveSamplesReachComplete();
   await testResultEventWaitsForEnrichedTerminalState();
@@ -1784,5 +1808,6 @@ async function testNetworkPreviewPopulatesBeforeFirstRun() {
   await testSettingsControlsSaveAndUseValidatedResponse();
   await testCompletedResultRendersAndSharesTheOoklaUrl();
   await testNetworkPreviewPopulatesBeforeFirstRun();
+  await testNetworkPreviewStillAppliesIfItResolvesAfterGoIsPressed();
     console.log('frontend live polling ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });
