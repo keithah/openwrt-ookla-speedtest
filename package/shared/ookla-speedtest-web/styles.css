@@ -113,11 +113,14 @@ button:focus-visible,input:focus-visible,a:focus-visible { outline:2px solid var
 .outcome { font-weight:650; }
 .outcome.failed { color:#ffb4b4; }
 #view { min-width:0; margin-top:20px; }
+#view h2 { font-size:1.15rem; }
+.setting-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); }
+.setting-row select { min-height:40px; }
 .history-scroll { max-width:100%; overflow-x:auto; overscroll-behavior-inline:contain; }
 .history-scroll:focus-visible { outline:2px solid var(--ping); outline-offset:3px; }
-.history-scroll table { min-width:680px; }
+.history-scroll table { min-width:820px; }
 table { width:100%; border-collapse:collapse; }
-th,td { padding:10px; border-bottom:1px solid var(--line); text-align:left; }
+th,td { padding:10px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
 #server-panel { width:min(100%,520px); margin:20px auto; padding:16px; border:1px solid var(--line); border-radius:8px; background:var(--panel); }
 #server-search { width:100%; padding:10px; }
 #server-results button { display:block; width:100%; text-align:left; }

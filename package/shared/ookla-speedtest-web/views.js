@@ -122,11 +122,12 @@
   }
 
   function setting(doc, container, label, value) {
-    add(doc, container, 'p', label + ': ' + (value == null || value === '' ? 'Automatic' : String(value)));
+    add(doc, container, 'p', label + ': ' + (value == null || value === '' ? 'Automatic' : String(value)), 'setting-row');
   }
 
   function selectSetting(doc, container, label, name, value, choices, actions) {
     var row = doc.createElement('label');
+    row.className = 'setting-row';
     add(doc, row, 'span', label);
     var select = doc.createElement('select');
     select.setAttribute('data-setting', name);

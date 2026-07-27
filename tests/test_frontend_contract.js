@@ -50,6 +50,9 @@ assert.match(css,/@media\s*\(max-width:\s*480px\)\s*\{[^}]*\.app-header\s*\{[^}]
 assert.doesNotMatch(css,/\.gauge-needle/);
 assert.match(css,/\.history-scroll\s*\{[^}]*overflow-x:\s*auto/s);
 assert.match(css,/\.history-scroll table\s*\{[^}]*min-width:/s);
+assert.match(css,/\bth\s*,\s*td\s*\{[^}]*white-space:\s*nowrap/s,'history/analytics tables scroll instead of wrapping cell text on narrow screens');
+assert.match(css,/\.setting-row\s*\{[^}]*display:\s*flex/s,'settings rows must be styled or they render as an unreadable inline run of labels and selects');
+assert.match(renderers,/className\s*=\s*['"]setting-row['"]/);
 assert.match(js,/aria-pressed/);assert.match(js,/\.disabled\s*=/);
 assert.match(html,/data-mode=["']router-internet["'][^>]*aria-pressed=["']true["']/);
 assert.match(html,/data-mode=["']device-router["'][^>]*aria-pressed=["']false["']/);
