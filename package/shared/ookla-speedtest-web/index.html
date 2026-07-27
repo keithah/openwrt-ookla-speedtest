@@ -16,9 +16,6 @@
       <button id="nav-history" data-view="history" aria-label="History" data-tooltip="History">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M5.1 5.1A9 9 0 1 1 3 9m0-5v5h5"/></svg>
       </button>
-      <button id="nav-analytics" data-view="analytics" aria-label="Analytics" data-tooltip="Analytics">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>
-      </button>
       <button id="nav-settings" data-view="settings" aria-label="Settings" data-tooltip="Settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm0-5 1 2.2 2.4.5 1.8-1.5 2.1 2.1-1.5 1.8.5 2.4 2.2 1v3l-2.2 1-.5 2.4 1.5 1.8-2.1 2.1-1.8-1.5-2.4.5-1 2.2h-3l-1-2.2-2.4-.5-1.8 1.5-2.1-2.1 1.5-1.8-.5-2.4-2.2-1v-3l2.2-1 .5-2.4-1.5-1.8 2.1-2.1 1.8 1.5 2.4-.5 1-2.2Z"/></svg>
       </button>
@@ -41,21 +38,12 @@
     </div>
 
     <div class="metrics-strip" id="primary-metrics" hidden>
-      <div class="metric ping-metric" aria-label="Ping">
-        <span>Ping</span><strong id="metric-ping">—</strong><small>ms</small>
-      </div>
       <div class="metric download-metric" aria-label="Download">
         <span>Download</span><strong id="metric-download">—</strong><small>Mbps</small>
-        <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-labelledby="download-trace-label"><title id="download-trace-label">Download speed over time</title><path id="download-trace"></path></svg>
       </div>
       <div class="metric upload-metric" aria-label="Upload">
         <span>Upload</span><strong id="metric-upload">—</strong><small>Mbps</small>
-        <svg class="metric-trace" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-labelledby="upload-trace-label"><title id="upload-trace-label">Upload speed over time</title><path id="upload-trace"></path></svg>
       </div>
-    </div>
-    <div class="latency-strip" aria-label="Connection responsiveness" hidden>
-      <div><span>Jitter</span><strong id="metric-jitter">—</strong><small>ms</small></div>
-      <div><span>Loss</span><strong id="metric-loss">—</strong><small>%</small></div>
     </div>
 
     <div id="live-gauge" class="gauge-shell" data-phase="idle" data-status="idle" data-shape="disc" aria-busy="false">
@@ -74,6 +62,24 @@
       </div>
       <button id="go-control" class="go" aria-label="Start Router to Internet test">GO</button>
       <button id="cancel-test" class="cancel" hidden>Cancel test</button>
+    </div>
+
+    <div class="latency-strip" aria-label="Connection responsiveness" hidden>
+      <div><span>Ping</span><strong id="metric-ping">—</strong><small>ms</small></div>
+      <div><span>Jitter</span><strong id="metric-jitter">—</strong><small>ms</small></div>
+      <div><span>Loss</span><strong id="metric-loss">—</strong><small>%</small></div>
+    </div>
+
+    <div class="live-graph" id="live-graph" hidden>
+      <svg viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-labelledby="live-graph-label">
+        <title id="live-graph-label">Download and upload speed over time</title>
+        <path id="download-trace" class="graph-trace graph-trace-download"></path>
+        <path id="upload-trace" class="graph-trace graph-trace-upload"></path>
+      </svg>
+      <div class="live-graph-legend">
+        <span class="legend-download">Download</span>
+        <span class="legend-upload">Upload</span>
+      </div>
     </div>
 
     <p id="status">Ready to test your connection</p>

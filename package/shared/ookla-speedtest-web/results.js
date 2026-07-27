@@ -16,31 +16,6 @@
     while (container && container.firstChild) container.removeChild(container.firstChild);
   }
 
-  function value(input) {
-    return input == null || input === '' ? '—' : String(input);
-  }
-
-  function numericLatency(flattened, latency) {
-    if (typeof flattened === 'number' && isFinite(flattened)) return flattened;
-    if (typeof latency === 'number' && isFinite(latency)) return latency;
-    if (latency && typeof latency.iqm === 'number' && isFinite(latency.iqm)) return latency.iqm;
-  }
-
-  function line(doc, container, label, input, unit, optional) {
-    if (optional && input == null) return;
-    var node = doc.createElement('p');
-    node.textContent = label + ' ' + value(input) + (unit ? ' ' + unit : '');
-    container.appendChild(node);
-  }
-
-  function detail(doc, container, label, parts) {
-    var content = parts.filter(function(part) { return part != null && part !== ''; });
-    if (!content.length) return;
-    var node = doc.createElement('small');
-    node.textContent = label + ': ' + content.join(' · ');
-    container.appendChild(node);
-  }
-
   function networkSummary(result) {
     var context = result && result.network_context || {};
     if (context.vpn_kind === 'tailscale-exit') return 'Router → Internet via Tailscale exit node';
@@ -50,16 +25,14 @@
     return 'Router → Internet via direct WAN path';
   }
 
-  function card(doc, title, result, kind) {
+  // Every number and every Provider/Connection/Server/Location field this result
+  // could show is already live on the dashboard above (metrics strip, ping/jitter/
+  // loss row, network-context, and server rows). This card exists only for the
+  // handful of things that live nowhere else, so completing a test never grows
+  // the page or requires scrolling.
+  function card(doc, result, kind) {
     var section = doc.createElement('article');
     section.className = 'result-card ' + kind;
-    var heading = doc.createElement('h2');
-    heading.textContent = title;
-    heading.setAttribute('tabindex', '-1');
-    section.appendChild(heading);
-    line(doc, section, 'Download', result.download_mbps, 'Mbps');
-    line(doc, section, 'Upload', result.upload_mbps, 'Mbps');
-    line(doc, section, 'Ping', result.ping_ms, 'ms');
     if (kind === 'local') {
       var warning = doc.createElement('p');
       warning.className = 'scope-note';
@@ -67,23 +40,6 @@
       section.appendChild(warning);
       return section;
     }
-    var ping = result.ping || {}, download = result.download || {}, upload = result.upload || {};
-    line(doc, section, 'Idle latency', numericLatency(result.idle_latency_ms, ping.latency), 'ms', true);
-    line(doc, section, 'Download latency', numericLatency(result.download_latency_ms, download.latency), 'ms', true);
-    line(doc, section, 'Upload latency', numericLatency(result.upload_latency_ms, upload.latency), 'ms', true);
-    line(doc, section, 'Jitter', result.jitter_ms != null ? result.jitter_ms : ping.jitter, 'ms', true);
-    line(doc, section, 'Loss', result.loss_percent != null ? result.loss_percent : result.packetLoss, '%', true);
-    detail(doc, section, 'Provider', [result.isp]);
-    var connection = result.interface || {};
-    if (typeof connection === 'string') detail(doc, section, 'WAN interface/type', [connection]);
-    else detail(doc, section, 'WAN interface/type', [connection.name, connection.type || connection.connectionType]);
-    var server = result.server || {};
-    detail(doc, section, 'Server', [server.name, server.sponsor, server.location || server.city || server.country]);
-    if (result.location) detail(doc, section, 'Location', [result.location]);
-    var summary = doc.createElement('p');
-    summary.className = 'network-summary';
-    summary.textContent = networkSummary(result);
-    section.appendChild(summary);
     if (result.share_url) {
       var share = doc.createElement('button');
       share.type = 'button';
@@ -91,8 +47,9 @@
       share.textContent = 'Share result';
       share.setAttribute('data-share-url', result.share_url);
       section.appendChild(share);
+      return section;
     }
-    return section;
+    return null;
   }
 
   function render(container, mode, results) {
@@ -103,10 +60,12 @@
       container.className = ((container.className || '') + ' final-result').replace(/^\s+/, '');
     }
     if ((mode === 'device-router' || mode === 'both') && values.local) {
-      container.appendChild(card(doc, 'Device → Router', values.local, 'local'));
+      var localCard = card(doc, values.local, 'local');
+      if (localCard) container.appendChild(localCard);
     }
     if ((mode === 'router-internet' || mode === 'both') && values.internet) {
-      container.appendChild(card(doc, 'Router → Internet', values.internet, 'internet'));
+      var internetCard = card(doc, values.internet, 'internet');
+      if (internetCard) container.appendChild(internetCard);
     }
   }
 

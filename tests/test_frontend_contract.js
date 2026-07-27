@@ -6,14 +6,15 @@ const renderers=['results.js','views.js'].map(f=>fs.readFileSync(path.join(root,
 const makefile=fs.readFileSync(path.join(__dirname,'..','package','Makefile'),'utf8');const version=makefile.match(/^PKG_VERSION:=(\S+)$/m)[1];const escapedVersion=version.replaceAll('.','\\.');
 for(const [asset,attribute] of [['styles.css','href'],['gauge.js','src'],['results.js','src'],['views.js','src'],['app.js','src']]) assert.match(html,new RegExp(`${attribute}=["']${asset.replaceAll('.','\\.')}\\?v=${escapedVersion}["']`));
 assert.match(html,new RegExp(`<script src=["']gauge\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']results\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']views\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']app\\.js\\?v=${escapedVersion}["']><\\/script>`));
-for(const id of ['app-title','path-badge','nav-history','nav-analytics','nav-settings','nav-about',
+for(const id of ['app-title','path-badge','nav-history','nav-settings','nav-about',
   'mode-picker','metric-ping','metric-download','metric-upload','live-gauge','gauge-track',
   'gauge-progress','gauge-value','gauge-unit','network-context','server-picker',
-  'go-control','cancel-test','results']) assert.match(html,new RegExp(`id=["']${id}["']`));
+  'go-control','cancel-test','results','live-graph']) assert.match(html,new RegExp(`id=["']${id}["']`));
+assert.doesNotMatch(html,/id=["']nav-analytics["']/);
 assert.match(html,/viewBox=["']0 0 286 286["']/);
 assert.doesNotMatch(html,/id=["']gauge-needle["']/);
-assert.match(css,/\.gauge-shell\s*\{[^}]*width:\s*286px;[^}]*height:\s*286px/s);
-assert.match(css,/\.gauge-track[^}]*stroke-width:\s*23/);
+assert.match(css,/\.gauge-shell\s*\{[^}]*width:\s*200px;[^}]*height:\s*200px/s);
+assert.match(css,/\.gauge-track[^}]*stroke-width:\s*16/);
 assert.doesNotMatch(html,/<circle[^>]+(?:hub|needle)/i);
 const productName='OpenWrt Ookla Speedtest \\(Unofficial\\)';
 assert.match(html,new RegExp(`<title>\\s*${productName}\\s*<\\/title>`));
@@ -26,11 +27,11 @@ assert.match(html,/id=["']live-announcer["'][^>]*aria-live=["']polite["'][^>]*da
 assert.match(html,/id=["']phase-announcer["'][^>]*aria-live=["']polite["']/);
 assert.match(html,/role=["']alert["'][^>]*aria-atomic=["']true["']/);
 assert.match(html,/<dialog[^>]*id=["']terms-dialog["'][^>]*aria-labelledby=["']terms-title["']/);
-for (const label of ['History','Analytics','Settings','About']) {
+for (const label of ['History','Settings','About']) {
   assert.match(html, new RegExp(`<button[^>]*data-view=["'][^"']+["'][^>]*aria-label=["']${label}["'][^>]*>[\\s\\S]*?<svg[^>]*aria-hidden=["']true["']`));
 }
 for (const label of ['GO','Cancel test','Retry','Change','I agree']) assert.match(html,new RegExp(`>\\s*${label}\\s*<`));
-assert.match(html,/id=["']download-trace-label["']/);assert.match(html,/id=["']upload-trace-label["']/);
+assert.match(html,/id=["']live-graph-label["']/);
 assert.match(html,/id=["']retry-test["'][^>]*>Retry</);
 assert.match(html,/id=["']primary-metrics["'][^>]*hidden/);assert.match(html,/class=["']latency-strip["'][^>]*hidden/);
 assert.match(html,/id=["']gauge-dial["']/);assert.match(html,/id=["']gauge-readout["']/);
@@ -44,7 +45,7 @@ assert.match(css,/--cyan\s*:/); assert.match(css,/--violet\s*:/); assert.match(c
 assert.match(css,/\.icon-nav button\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px/s);
 assert.match(css,/html\s*,\s*body\s*,\s*#app\s*\{[^}]*max-width:\s*100%;[^}]*overflow-x:\s*hidden/s);
 assert.match(css,/@media\s*\(max-width:\s*520px\)[\s\S]*\.metrics-strip\s*,\s*\.final-result\s*\{[^}]*grid-template-columns:\s*1fr/s);
-assert.match(css,/width:\s*min\(286px\s*,\s*calc\(100vw\s*-\s*56px\)\)/);
+assert.match(css,/width:\s*min\(200px\s*,\s*calc\(100vw\s*-\s*56px\)\)/);
 assert.match(css,/(?:button|\.mode-picker button|\.server button)[^{]*\{[^}]*min-height:\s*44px/s);
 assert.match(css,/@media\s*\(max-width:\s*480px\)\s*\{[^}]*\.app-header\s*\{[^}]*flex-direction:\s*column;[^}]*align-items:\s*stretch;[^}]*\}\s*\.brand-lockup strong\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*\}\s*\.icon-nav\s*\{[^}]*flex-wrap:\s*wrap;[^}]*\}/s);
 assert.doesNotMatch(css,/\.gauge-needle/);
@@ -53,6 +54,7 @@ assert.match(css,/\.history-scroll table\s*\{[^}]*min-width:/s);
 assert.match(css,/\bth\s*,\s*td\s*\{[^}]*white-space:\s*nowrap/s,'history/analytics tables scroll instead of wrapping cell text on narrow screens');
 assert.match(css,/\.setting-row\s*\{[^}]*display:\s*flex/s,'settings rows must be styled or they render as an unreadable inline run of labels and selects');
 assert.match(renderers,/className\s*=\s*['"]setting-row['"]/);
+assert.match(renderers,/back-home/,'non-home views must offer a way back to the dashboard');
 assert.match(js,/aria-pressed/);assert.match(js,/\.disabled\s*=/);
 assert.match(html,/data-mode=["']router-internet["'][^>]*aria-pressed=["']true["']/);
 assert.match(html,/data-mode=["']device-router["'][^>]*aria-pressed=["']false["']/);

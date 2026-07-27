@@ -59,17 +59,18 @@
     region.setAttribute('aria-label', 'Speedtest history table');
     region.setAttribute('tabindex', '0');
     var table = doc.createElement('table'), head = doc.createElement('tr');
-    ['Path', 'Date', 'Location', 'Outcome', 'Download', 'Upload', 'Ping', 'Actions'].forEach(function(label) {
+    ['Path', 'Date', 'Location', 'Server Location', 'Status', 'Download', 'Upload', 'Ping', 'Actions'].forEach(function(label) {
       add(doc, head, 'th', label);
     });
     table.appendChild(head);
     (state.history || []).forEach(function(row) {
       var tr = doc.createElement('tr');
       var values = [pathLabel(row.kind), row.date || new Date((row.timestamp || 0) * 1000).toLocaleString(),
-        row.location || '—', outcome(row), historyMbps(row, 'download'), historyMbps(row, 'upload'),
+        row.location || '—', (row.server && row.server.location) || '—', outcome(row),
+        historyMbps(row, 'download'), historyMbps(row, 'upload'),
         row.ping_ms != null ? metric(row.ping_ms) + ' ms' : row.latency != null ? metric(row.latency) + ' ms' : '—'];
       values.forEach(function(value, index) {
-        var className = index === 0 ? 'mode-badge ' + row.kind : index === 3 ? 'outcome ' + (row.outcome === 'error' || row.outcome === 'failed' ? 'failed' : row.outcome || 'success') : '';
+        var className = index === 0 ? 'mode-badge ' + row.kind : index === 4 ? 'outcome ' + (row.outcome === 'error' || row.outcome === 'failed' ? 'failed' : row.outcome || 'success') : '';
         add(doc, tr, 'td', value, className);
       });
       var actionCell = doc.createElement('td');
@@ -88,37 +89,6 @@
       var clearButton = add(doc, container, 'button', 'Clear history');
       clearButton.onclick = actions.clearHistory;
     }
-  }
-
-  function valueFor(row, key) {
-    if (row[key] != null) return Number(row[key]);
-    if ((key === 'download_mbps' || key === 'upload_mbps') && row[key.replace('_mbps', '')] && row[key.replace('_mbps', '')].bandwidth != null) {
-      var bandwidth = Number(row[key.replace('_mbps', '')].bandwidth);
-      return row.kind === 'router-internet' ? bandwidth * 8 / 1000000 : bandwidth;
-    }
-    if (key === 'ping_ms' && row.latency != null) return Number(row.latency);
-    return null;
-  }
-
-  function renderSeries(doc, section, rows, label, key, unit) {
-    var values = rows.map(function(row) { return valueFor(row, key); }).filter(function(number) { return number != null && isFinite(number); });
-    if (!values.length) return;
-    var average = values.reduce(function(sum, number) { return sum + number; }, 0) / values.length;
-    add(doc, section, 'p', label + ' average ' + metric(average) + ' ' + unit + ' · min ' + metric(Math.min.apply(Math, values)) + ' · max ' + metric(Math.max.apply(Math, values)));
-  }
-
-  function renderAnalytics(doc, container, state) {
-    add(doc, container, 'h2', 'Analytics');
-    ['router-internet', 'device-router'].forEach(function(kind) {
-      var rows = (state.history || []).filter(function(row) { return row.kind === kind && row.outcome === 'success'; });
-      var section = doc.createElement('section');
-      section.className = 'analytics-series ' + kind;
-      add(doc, section, 'h3', pathLabel(kind) + ': ' + rows.length + ' recorded test' + (rows.length === 1 ? '' : 's'));
-      renderSeries(doc, section, rows, 'Download', 'download_mbps', 'Mbps');
-      renderSeries(doc, section, rows, 'Upload', 'upload_mbps', 'Mbps');
-      renderSeries(doc, section, rows, 'Ping', 'ping_ms', 'ms');
-      container.appendChild(section);
-    });
   }
 
   function setting(doc, container, label, value) {
@@ -165,8 +135,12 @@
     clear(container);
     state = state || {};
     actions = actions || {};
+    if (view === 'home') return;
+    if (actions.goHome) {
+      var back = add(doc, container, 'button', '← Home', 'back-home');
+      back.onclick = actions.goHome;
+    }
     if (view === 'history') renderHistory(doc, container, state, actions);
-    else if (view === 'analytics') renderAnalytics(doc, container, state);
     else if (view === 'settings') renderSettings(doc, container, state, actions);
     else if (view === 'about') renderAbout(doc, container);
   }

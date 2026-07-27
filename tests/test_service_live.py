@@ -321,6 +321,27 @@ class ServiceLiveTests(unittest.TestCase):
                 self.assertEqual(context["vpn_kind"], None)
                 self.assertEqual(context["vpn_name"], None)
 
+    def test_classify_connection_recognizes_common_interface_prefixes(self):
+        cases = [
+            ("rmnet_mhi0", "Cellular"), ("wwan0", "Cellular"), ("usb0", "Cellular"),
+            ("eth0", "Ethernet"), ("lan1", "Ethernet"),
+            ("wlan0", "Wi-Fi"), ("ra0", "Wi-Fi"),
+            ("tailscale0", "VPN"), ("wg0", "VPN"), ("tun0", "VPN"),
+            ("", None), (None, None), ("mystery0", None),
+        ]
+        for name, expected in cases:
+            with self.subTest(name=name):
+                self.assertEqual(self.mod.classify_connection(name), expected)
+
+    def test_connection_label_combines_classification_and_vpn_flag(self):
+        self.assertEqual(self.mod.connection_label("rmnet_mhi0", False), "Cellular")
+        self.assertEqual(self.mod.connection_label("eth0", True), "Ethernet (VPN)")
+        self.assertEqual(self.mod.connection_label("tailscale0", True), "VPN")
+        self.assertEqual(self.mod.connection_label("tailscale0", False), "VPN")
+        self.assertEqual(self.mod.connection_label("mystery0", False), "mystery0")
+        self.assertEqual(self.mod.connection_label("mystery0", True), "Connection (VPN)")
+        self.assertEqual(self.mod.connection_label(None, False), "Connection")
+
     def _clear_location_cache(self):
         try:
             os.unlink(self.mod.locationcachefile)

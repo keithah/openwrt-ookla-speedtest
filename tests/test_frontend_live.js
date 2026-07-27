@@ -63,7 +63,7 @@ async function flushUntil(predicate) {
 }
 
 function harness(handler, options) {
-  const ids = ['test-stage', 'live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
+  const ids = ['test-stage', 'live-graph', 'live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
     'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
     'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
     'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
@@ -419,8 +419,8 @@ async function testDeleteHistoryActionRefreshesRenderedHistory() {
     refreshed[0]
   ];
   h.app.render();
-  const table = h.nodes.view.children[1].children[0];
-  const deleteButton = table.children[1].children[7].children[1];
+  const table = h.nodes.view.children[2].children[0];
+  const deleteButton = table.children[1].children[8].children[1];
 
   await deleteButton.onclick();
 
@@ -438,7 +438,7 @@ async function testClearHistoryActionRefreshesRenderedHistory() {
   h.app.state.view = 'history';
   h.app.state.history = [{ id: 'cleared', date: 'Today', kind: 'router-internet', outcome: 'success', download_mbps: 75 }];
   h.app.render();
-  const clearButton = h.nodes.view.children[2];
+  const clearButton = h.nodes.view.children[3];
 
   await clearButton.onclick();
 
@@ -950,14 +950,21 @@ async function testCompletedResultsRenderPathMetadataAndModeScope() {
   h.app.state.status = 'done';
   h.app.state.phase = 'complete';
   h.app.render();
-  assert.equal(h.nodes.results.children.length, 2);
-  assert.match(nodeText(h.nodes.results.children[0]), /Device → Router/);
-  const internet = nodeText(h.nodes.results.children[1]);
-  for (const expected of ['Router → Internet', 'Jitter 1.4 ms', 'Loss 0 %', 'West Coast', 'Example ISP', 'wan', 'direct WAN path']) assert.match(internet, new RegExp(expected));
+  // The internet leg has no share_url, and every number/Provider/Connection/Server
+  // field it could show is already live on the dashboard above, so it renders no
+  // card of its own -- only the local-test caveat, which lives nowhere else.
+  assert.equal(h.nodes.results.children.length, 1);
+  assert.match(nodeText(h.nodes.results.children[0]), /not a public internet speed/i);
+
+  h.app.state.results.internet.share_url = 'https://www.speedtest.net/result/c/both-mode';
+  h.app.render();
+  assert.equal(h.nodes.results.children.length, 2, 'a share_url gives the internet leg its own compact card');
+  assert.equal(h.nodes.results.children[1].children[0].getAttribute('data-share-url'), 'https://www.speedtest.net/result/c/both-mode');
+
   h.app.state.mode = 'device-router';
   h.app.render();
   assert.equal(h.nodes.results.children.length, 1);
-  assert.match(nodeText(h.nodes.results.children[0]), /Device → Router/);
+  assert.match(nodeText(h.nodes.results.children[0]), /not a public internet speed/i);
 }
 
 async function testTerminalInternetErrorsPreservePhaseAndLastSample() {
@@ -983,7 +990,7 @@ async function testTerminalInternetErrorsPreservePhaseAndLastSample() {
   }
 }
 
-async function testHistoryOutcomesConversionAndAnalytics() {
+async function testHistoryOutcomesConversionAndBackButton() {
   const h = harness(() => Promise.resolve({ ok: true }));
   h.app.state.history = [
     { id: 'ok', date: 'Today', kind: 'router-internet', outcome: 'success', download: { bandwidth: 12500000 }, upload: { bandwidth: 2500000 }, latency: 8 },
@@ -997,14 +1004,13 @@ async function testHistoryOutcomesConversionAndAnalytics() {
   assert.match(history, /Cancelled/);
   assert.match(history, /Failed \(local_io\)/);
   assert.match(history, /900 Mbps/);
-  assert.equal(h.nodes.view.children[1].className, 'history-scroll');
-  assert.equal(h.nodes.view.children[1].attributes.role, 'region');
-  assert.equal(h.nodes.view.children[1].attributes.tabindex, '0');
+  assert.equal(h.nodes.view.children[0].className, 'back-home', 'the history view offers a way back to the dashboard');
+  assert.equal(h.nodes.view.children[2].className, 'history-scroll');
+  assert.equal(h.nodes.view.children[2].attributes.role, 'region');
+  assert.equal(h.nodes.view.children[2].attributes.tabindex, '0');
   assert.equal(nodesWithClass(h.nodes.view, 'failed').length, 1, 'backend error outcome uses failed styling');
-  h.app.state.view = 'analytics'; h.app.render();
-  const analytics = nodeText(h.nodes.view);
-  assert.match(analytics, /Router → Internet: 1 recorded test/);
-  assert.match(analytics, /Device → Router: 0 recorded tests/);
+  h.nodes.view.children[0].onclick();
+  assert.equal(h.app.state.view, 'home', 'the back button returns to the dashboard');
 }
 
 async function testErrorRetryUsesFailedModeAndConsumesUiRejections() {
@@ -1554,9 +1560,7 @@ async function testSelectedServerStartsLiveAndCompletionFocusesResult() {
   h.app.render();
   assert.equal(h.app.state.server.id, 73, 'the rich selected server survives rendering');
   await h.app.runMode('router-internet');
-  const heading = h.nodes.results.children[0].children[0];
-  assert.equal(heading.attributes.tabindex, '-1');
-  assert.equal(h.document.activeElement, heading, 'completion moves focus to the result heading');
+  assert.equal(h.document.activeElement, h.nodes['go-control'], 'completion moves focus to the RETEST control');
   assert.equal(h.nodes['go-control'].textContent, 'RETEST');
   assert.equal(h.nodes['go-control'].attributes['aria-label'], 'Run Router to Internet test again');
 }
@@ -1658,7 +1662,6 @@ async function testCompletedResultRendersAndSharesTheOoklaUrl() {
   assert.equal(h.app.state.results.internet.share_url, shareUrl);
   assert.equal(h.app.state.results.internet.location, 'Seattle, WA, United States', 'the resolved location flows into the completed result');
   h.app.render();
-  assert.match(h.nodes.results.children[0].children.map(node => node.textContent).join(' '), /Location: Seattle, WA, United States/);
   const shareButtons = h.nodes.results.children[0].children.filter(node => node.getAttribute('data-share-url'));
   assert.equal(shareButtons.length, 1);
   const button = shareButtons[0];
@@ -1752,7 +1755,7 @@ async function testNetworkPreviewPopulatesBeforeFirstRun() {
   await testBothFailureKeepsCompletedLocalAndIdentifiesInternet();
   await testCompletedResultsRenderPathMetadataAndModeScope();
   await testTerminalInternetErrorsPreservePhaseAndLastSample();
-  await testHistoryOutcomesConversionAndAnalytics();
+  await testHistoryOutcomesConversionAndBackButton();
   await testErrorRetryUsesFailedModeAndConsumesUiRejections();
   await testTermsAcceptanceRejectionBecomesRecoverableError();
   await testPhaseAnnouncementsAreDistinctFromThrottledNumbers();

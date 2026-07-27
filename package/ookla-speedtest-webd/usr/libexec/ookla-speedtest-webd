@@ -171,6 +171,19 @@ def network_context(result_isp=None):
  possible=bool(normalize(result_isp) and normalize(provider) and normalize(result_isp)!=normalize(provider))
  note=('Possible VPN/proxy path: the public test provider differs from the configured router WAN provider.' if possible else 'No VPN path detected; test reflects the router WAN path.')
  return {'vpn':False,'vpn_kind':None,'vpn_name':None,'possible_vpn':possible,'note':note}
+def classify_connection(name):
+ name=(name or '').lower()
+ if not name: return None
+ if re.match(r'^(wwan|rmnet|qmi|mhi|usb\d)',name): return 'Cellular'
+ if re.match(r'^(eth|lan)',name): return 'Ethernet'
+ if re.match(r'^(wlan|ra\d|rai\d|mesh|ath|wl)',name): return 'Wi-Fi'
+ if re.match(r'^(wg|tun|tap|tailscale|zt|ipsec)',name): return 'VPN'
+ return None
+def connection_label(interface_name,vpn):
+ kind=classify_connection(interface_name)
+ if kind=='VPN': return 'VPN'
+ if vpn: return (kind or 'Connection')+' (VPN)'
+ return kind or interface_name or 'Connection'
 def network_preview(server_id):
  cmd=[binary,'--accept-license','--format=jsonl','--progress=no']
  if server_id is not None: cmd+=['--server-id',str(server_id)]
@@ -598,6 +611,7 @@ def main(req):
   if not event: return {'ok':False,'error':{'code':'network_info_error'}}
   info={'isp':event.get('isp'),'interface':event.get('interface'),'server':event.get('server')}
   info['network_context']=network_context(info.get('isp'))
+  info['connection_label']=connection_label((info.get('interface') or {}).get('name'),info['network_context']['vpn'])
   _network_info_cache={'server_id':sid,'info':info}; _network_info_cache_at=time.time()
   try: atomic_write(networkinfocachefile,json.dumps({'server_id':sid,'timestamp':_network_info_cache_at,'info':info},separators=(',',':')))
   except Exception: pass
@@ -642,6 +656,7 @@ def main(req):
   writehist(items)
   writestate({'state':'result','result':result,'finished':int(time.time())})
   result['network_context']=network_context(result.get('isp'))
+  result['connection_label']=connection_label((result.get('interface') or {}).get('name'),result['network_context']['vpn'])
   result['location']=location
   return {'ok':True,'result':result}
  except Exception as e:

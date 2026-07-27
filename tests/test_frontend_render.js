@@ -28,7 +28,7 @@ class FakeNode {
   addEventListener(name, fn) { this['on' + name] = fn; }
 }
 
-const ids = ['test-stage', 'live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
+const ids = ['test-stage', 'live-graph', 'live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
   'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
   'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
   'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
@@ -67,44 +67,24 @@ assert.equal(Results.networkSummary({ network_context: { possible_vpn: true } })
 assert.equal(Results.networkSummary({ network_context: { vpn: false } }),
   'Router → Internet via direct WAN path');
 
+// Every number/Provider/Connection/Server/Location field is already live on the
+// dashboard above, so the completion card only ever needs to show the local-test
+// caveat and/or a share button -- never a duplicate of data shown elsewhere.
 Results.render(nodes.results, 'both', {
   local: { download_mbps: 640, upload_mbps: 510, ping_ms: 2 },
-  internet: {
-    download_mbps: 920, upload_mbps: 850, ping_ms: 4,
-    idle_latency_ms: 4, download_latency_ms: 11, upload_latency_ms: 8,
-    jitter_ms: 1.2, loss_percent: 0, isp: 'Sonic',
-    interface: { name: 'wan', type: 'Ethernet' },
-    server: { name: 'San Jose', sponsor: 'Example Host', location: 'West Coast' }
-  }
+  internet: { download_mbps: 920, upload_mbps: 850, ping_ms: 4 }
 });
 const bothResults = nodeText(nodes.results);
-assert.match(bothResults, /Device → Router/);
-assert.match(bothResults, /640/);
 assert.match(bothResults, /not a public internet speed/i);
-assert.match(bothResults, /Router → Internet/);
-assert.match(bothResults, /920/);
-for (const expected of ['Idle latency 4 ms', 'Download latency 11 ms', 'Upload latency 8 ms',
-  'Jitter 1.2 ms', 'Loss 0 %', 'Sonic', 'wan', 'Ethernet', 'San Jose', 'Example Host', 'West Coast',
-  'direct WAN path']) assert.match(bothResults, new RegExp(expected));
+assert.doesNotMatch(bothResults, /640|920/, 'numbers already shown in the live metrics strip are not duplicated here');
+assert.equal(nodes.results.children.length, 1, 'no share_url means the internet leg renders no card at all');
 assert.match(nodes.results.className, /final-result/);
 
 Results.render(nodes.results, 'device-router', { local: { download_mbps: 12, ping_ms: 3 } });
-assert.match(nodeText(nodes.results), /Upload — Mbps/);
+assert.match(nodeText(nodes.results), /not a public internet speed/i);
 
-Results.render(nodes.results, 'router-internet', {
-  internet: {
-    download_mbps: 296.7, upload_mbps: 95, ping_ms: 11.554,
-    ping: { latency: 11.554 },
-    download: { latency: { iqm: 27.932 } },
-    upload: { latency: { iqm: 39.411 } }
-  }
-});
-const nestedLatencyResults = nodeText(nodes.results);
-assert.match(nestedLatencyResults, /Idle latency 11\.554 ms/);
-assert.match(nestedLatencyResults, /Download latency 27\.932 ms/);
-assert.match(nestedLatencyResults, /Upload latency 39\.411 ms/);
-assert.doesNotMatch(nestedLatencyResults, /\[object Object\]/);
-assert.doesNotMatch(nestedLatencyResults, /Share result/);
+Results.render(nodes.results, 'router-internet', { internet: { download_mbps: 296.7, upload_mbps: 95, ping_ms: 11.554 } });
+assert.equal(nodes.results.children.length, 0, 'a completed result with nothing unique to show renders no card');
 
 Results.render(nodes.results, 'router-internet', {
   internet: { download_mbps: 100, upload_mbps: 20, ping_ms: 8, share_url: 'https://www.speedtest.net/result/c/example' }
@@ -135,19 +115,15 @@ assert.equal(openButtons.length, 2);
 openButtons[1].children[0].click();
 assert.equal(opened.id, 'l');
 
-Views.render(nodes.view, 'analytics', {
-  history: [
-    { kind: 'router-internet', outcome: 'success', download_mbps: 100 },
-    { kind: 'router-internet', outcome: 'error', download_mbps: 1000 },
-    { kind: 'device-router', outcome: 'success', download_mbps: 900 }
-  ]
-}, {});
-const analyticsText = nodeText(nodes.view);
-assert.match(analyticsText, /Router → Internet: 1 recorded test/);
-assert.match(analyticsText, /Download average 100 Mbps/);
-assert.match(analyticsText, /Device → Router: 1 recorded test/);
-assert.match(analyticsText, /Download average 900 Mbps/);
-assert.doesNotMatch(analyticsText, /Download average 500 Mbps/);
+let wentHome = false;
+Views.render(nodes.view, 'settings', { settings: { terms_accepted: true } }, { goHome() { wentHome = true; } });
+const backButtons = nodes.view.children.filter(node => node.className === 'back-home');
+assert.equal(backButtons.length, 1, 'a non-home view with a goHome action offers exactly one back button');
+backButtons[0].click();
+assert.ok(wentHome, 'clicking the back button invokes goHome');
+
+Views.render(nodes.view, 'home', {}, { goHome() {} });
+assert.equal(nodes.view.children.length, 0, 'the home view never renders a back button or its own content');
 
 Views.render(nodes.view, 'settings', {
   settings: { server_name: 'San Jose', history_retention: 50, motion: 'reduced', terms_accepted: true }
