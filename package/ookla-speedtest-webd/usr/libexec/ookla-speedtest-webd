@@ -110,6 +110,29 @@ def readhist():
   with open(hist) as f: lines=f.read().splitlines()
   n=retention(); return [json.loads(x) for x in (lines if n==0 else lines[-n:]) if x.strip()]
  except: return []
+locationcachefile=os.path.join(run,'location-cache.json')
+def location_for_ip(ip):
+ if not ip or not re.fullmatch(r'[0-9a-fA-F:.]{3,45}',ip): return None
+ try: cache=json.load(open(locationcachefile))
+ except Exception: cache={}
+ if not isinstance(cache,dict): cache={}
+ entry=cache.get(ip)
+ if isinstance(entry,dict) and time.time()-float(entry.get('timestamp',0))<3600: return entry.get('location')
+ location=None
+ try:
+  p=subprocess.run(['curl','-s','--max-time','6','https://ipwho.is/'+ip],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=8)
+  if p.returncode==0:
+   data=json.loads(p.stdout[:65536])
+   if data.get('success'):
+    parts=[part for part in (data.get('city'),data.get('region'),data.get('country')) if part]
+    location=', '.join(parts) or None
+ except Exception: location=None
+ cache[ip]={'timestamp':time.time(),'location':location}
+ if len(cache)>50:
+  for stale in sorted(cache,key=lambda key: cache[key].get('timestamp',0) if isinstance(cache[key],dict) else 0)[:len(cache)-50]: del cache[stale]
+ try: atomic_write(locationcachefile,json.dumps(cache,separators=(',',':')))
+ except Exception: pass
+ return location
 def network_context(result_isp=None):
  names=[]
  try:
@@ -613,11 +636,13 @@ def main(req):
   if p.returncode: raise ValueError('speedtest_failed')
   try: result=json.loads(raw)
   except: raise ValueError('malformed_json')
-  rec={'id':new_id(),'timestamp':int(time.time()),'kind':'router-internet','server_id':result.get('server',{}).get('id',sid),'server':result.get('server',{}),'latency':result.get('ping',{}).get('latency'),'download':result.get('download',{}),'upload':result.get('upload',{}),'isp':result.get('isp'),'outcome':'success'}
+  location=location_for_ip((result.get('interface') or {}).get('externalIp'))
+  rec={'id':new_id(),'timestamp':int(time.time()),'kind':'router-internet','server_id':result.get('server',{}).get('id',sid),'server':result.get('server',{}),'latency':result.get('ping',{}).get('latency'),'download':result.get('download',{}),'upload':result.get('upload',{}),'isp':result.get('isp'),'location':location,'outcome':'success'}
   n=retention(); items=readhist()+[rec]; items=items if n==0 else items[-n:]
   writehist(items)
   writestate({'state':'result','result':result,'finished':int(time.time())})
   result['network_context']=network_context(result.get('isp'))
+  result['location']=location
   return {'ok':True,'result':result}
  except Exception as e:
   code='timeout' if isinstance(e,subprocess.TimeoutExpired) else ('output_too_large' if str(e)=='oversized_output' else ('speedtest_failed' if str(e)=='speedtest_failed' else 'malformed_output'))

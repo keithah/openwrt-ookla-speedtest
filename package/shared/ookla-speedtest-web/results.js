@@ -73,12 +73,13 @@
     line(doc, section, 'Upload latency', numericLatency(result.upload_latency_ms, upload.latency), 'ms', true);
     line(doc, section, 'Jitter', result.jitter_ms != null ? result.jitter_ms : ping.jitter, 'ms', true);
     line(doc, section, 'Loss', result.loss_percent != null ? result.loss_percent : result.packetLoss, '%', true);
-    detail(doc, section, 'ISP', [result.isp]);
+    detail(doc, section, 'Provider', [result.isp]);
     var connection = result.interface || {};
     if (typeof connection === 'string') detail(doc, section, 'WAN interface/type', [connection]);
     else detail(doc, section, 'WAN interface/type', [connection.name, connection.type || connection.connectionType]);
     var server = result.server || {};
     detail(doc, section, 'Server', [server.name, server.sponsor, server.location || server.city || server.country]);
+    if (result.location) detail(doc, section, 'Location', [result.location]);
     var summary = doc.createElement('p');
     summary.className = 'network-summary';
     summary.textContent = networkSummary(result);

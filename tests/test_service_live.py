@@ -321,6 +321,53 @@ class ServiceLiveTests(unittest.TestCase):
                 self.assertEqual(context["vpn_kind"], None)
                 self.assertEqual(context["vpn_name"], None)
 
+    def _clear_location_cache(self):
+        try:
+            os.unlink(self.mod.locationcachefile)
+        except OSError:
+            pass
+
+    def test_location_for_ip_joins_city_region_country(self):
+        self._clear_location_cache()
+
+        def run(command, **_kwargs):
+            self.assertEqual(command[:2], ["curl", "-s"])
+            self.assertEqual(command[-1], "https://ipwho.is/203.0.113.9")
+            payload = json.dumps(
+                {"success": True, "city": "Seattle", "region": "WA", "country": "United States"}
+            ).encode()
+            return mock.Mock(returncode=0, stdout=payload)
+
+        with mock.patch.object(self.mod.subprocess, "run", side_effect=run) as mocked:
+            location = self.mod.location_for_ip("203.0.113.9")
+            self.assertEqual(location, "Seattle, WA, United States")
+            self.assertEqual(mocked.call_count, 1)
+
+            cached = self.mod.location_for_ip("203.0.113.9")
+            self.assertEqual(cached, "Seattle, WA, United States")
+            self.assertEqual(mocked.call_count, 1, "a cached lookup must not shell out again")
+
+    def test_location_for_ip_is_none_on_lookup_failure(self):
+        self._clear_location_cache()
+        cases = [
+            mock.Mock(returncode=1, stdout=b""),
+            mock.Mock(returncode=0, stdout=b"not json"),
+            mock.Mock(returncode=0, stdout=json.dumps({"success": False}).encode()),
+        ]
+        for index, response in enumerate(cases):
+            ip = "198.51.100.%d" % index
+            with self.subTest(response=response), mock.patch.object(
+                self.mod.subprocess, "run", return_value=response
+            ):
+                self.assertIsNone(self.mod.location_for_ip(ip))
+
+    def test_location_for_ip_rejects_missing_or_malformed_input(self):
+        with mock.patch.object(self.mod.subprocess, "run") as mocked:
+            self.assertIsNone(self.mod.location_for_ip(None))
+            self.assertIsNone(self.mod.location_for_ip(""))
+            self.assertIsNone(self.mod.location_for_ip("not-an-ip!"))
+            mocked.assert_not_called()
+
 
 class LiveJobTests(unittest.TestCase):
     def setUp(self):

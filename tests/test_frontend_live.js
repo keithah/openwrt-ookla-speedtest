@@ -63,7 +63,7 @@ async function flushUntil(predicate) {
 }
 
 function harness(handler, options) {
-  const ids = ['live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
+  const ids = ['test-stage', 'live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
     'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
     'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
     'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
@@ -420,7 +420,7 @@ async function testDeleteHistoryActionRefreshesRenderedHistory() {
   ];
   h.app.render();
   const table = h.nodes.view.children[1].children[0];
-  const deleteButton = table.children[1].children[6].children[1];
+  const deleteButton = table.children[1].children[7].children[1];
 
   await deleteButton.onclick();
 
@@ -1648,7 +1648,7 @@ async function testCompletedResultRendersAndSharesTheOoklaUrl() {
       state: 'complete', phase: 'complete', progress: 1, download_mbps: 100, upload_mbps: 20, ping_ms: 8,
       result: { download: { bandwidth: 12500000 }, upload: { bandwidth: 2500000 }, ping: { latency: 8 }, packetLoss: 0,
         isp: 'Example ISP', interface: { name: 'wan' }, server: { id: 42, name: 'Example Server' },
-        network_context: { note: 'Direct' }, result: { id: 'share-me', url: shareUrl } }
+        network_context: { note: 'Direct' }, result: { id: 'share-me', url: shareUrl }, location: 'Seattle, WA, United States' }
     }));
     if (method === 'history') return Promise.resolve({ ok: true, items: [] });
     throw new Error('unexpected ' + method);
@@ -1656,7 +1656,9 @@ async function testCompletedResultRendersAndSharesTheOoklaUrl() {
   h.ready();
   await h.app.runMode('router-internet');
   assert.equal(h.app.state.results.internet.share_url, shareUrl);
+  assert.equal(h.app.state.results.internet.location, 'Seattle, WA, United States', 'the resolved location flows into the completed result');
   h.app.render();
+  assert.match(h.nodes.results.children[0].children.map(node => node.textContent).join(' '), /Location: Seattle, WA, United States/);
   const shareButtons = h.nodes.results.children[0].children.filter(node => node.getAttribute('data-share-url'));
   assert.equal(shareButtons.length, 1);
   const button = shareButtons[0];

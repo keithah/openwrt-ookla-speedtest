@@ -28,7 +28,7 @@ class FakeNode {
   addEventListener(name, fn) { this['on' + name] = fn; }
 }
 
-const ids = ['live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
+const ids = ['test-stage', 'live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
   'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
   'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
   'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
@@ -117,7 +117,7 @@ assert.equal(shareButtons[0].getAttribute('data-share-url'), 'https://www.speedt
 let opened = null;
 Views.render(nodes.view, 'history', {
   history: [
-    { id: 'i', date: 'Today', kind: 'router-internet', outcome: 'success', download_mbps: 100, upload_mbps: 20, ping_ms: 8 },
+    { id: 'i', date: 'Today', kind: 'router-internet', outcome: 'success', location: 'Seattle, WA, United States', download_mbps: 100, upload_mbps: 20, ping_ms: 8 },
     { id: 'l', date: 'Today', kind: 'device-router', outcome: 'error', error_code: 'local_io', download_mbps: 900 }
   ]
 }, { openResult(row) { opened = row; } });
@@ -125,6 +125,9 @@ const historyText = nodeText(nodes.view);
 assert.match(historyText, /Router → Internet/);
 assert.match(historyText, /Device → Router/);
 assert.match(historyText, /Failed \(local_io\)/);
+assert.match(historyText, /Location/, 'history table has a Location column header');
+assert.match(historyText, /Seattle, WA, United States/, 'a recorded location renders in the history row');
+assert.doesNotMatch(historyText, /Success/, 'a successful outcome renders blank, not the word Success');
 const openButtons = nodes.view.children[1].children[0].children
   .map(row => row.children[row.children.length - 1])
   .filter(cell => cell && cell.children[0] && cell.children[0].textContent === 'View result');
@@ -176,6 +179,14 @@ assert.equal(nodes['primary-metrics'].hidden, true, 'idle hides throughput metri
 assert.equal(latency.hidden, true, 'idle hides latency metrics');
 assert.equal(nodes['phase-label'].textContent, 'Ready');
 assert.equal(nodes['live-gauge'].attributes['data-shape'], 'disc');
+assert.equal(nodes['test-stage'].hidden, false, 'the dashboard is visible on the home view');
+
+app.state.view = 'history';
+app.render();
+assert.equal(nodes['test-stage'].hidden, true, 'switching to History hides the dashboard instead of pushing it below the page');
+app.state.view = 'home';
+app.render();
+assert.equal(nodes['test-stage'].hidden, false, 'returning to the home view restores the dashboard');
 
 Object.assign(app.state, { status: 'preparing', phase: 'preparing' });
 app.render();

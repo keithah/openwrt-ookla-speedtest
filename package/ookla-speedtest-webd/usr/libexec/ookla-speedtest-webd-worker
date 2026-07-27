@@ -69,6 +69,7 @@ def history_result(service, job_id, result):
         "upload": result.get("upload") or {},
         "isp": result.get("isp"),
         "share_url": (result.get("result") or {}).get("url"),
+        "location": result.get("location"),
         "outcome": "success",
     }
 
@@ -237,6 +238,7 @@ def run(job_id, server_id):
             )
         else:
             result["network_context"] = service.network_context(result.get("isp"))
+            result["location"] = service.location_for_ip((result.get("interface") or {}).get("externalIp"))
             state.update(
                 {
                     "ok": True,

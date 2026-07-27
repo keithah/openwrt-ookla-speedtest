@@ -44,7 +44,7 @@
       var code = row.error_code || row.error && row.error.code;
       return 'Failed' + (code ? ' (' + code + ')' : '');
     }
-    return 'Success';
+    return '';
   }
 
   function pathLabel(kind) {
@@ -59,17 +59,17 @@
     region.setAttribute('aria-label', 'Speedtest history table');
     region.setAttribute('tabindex', '0');
     var table = doc.createElement('table'), head = doc.createElement('tr');
-    ['Path', 'Date', 'Outcome', 'Download', 'Upload', 'Ping', 'Actions'].forEach(function(label) {
+    ['Path', 'Date', 'Location', 'Outcome', 'Download', 'Upload', 'Ping', 'Actions'].forEach(function(label) {
       add(doc, head, 'th', label);
     });
     table.appendChild(head);
     (state.history || []).forEach(function(row) {
       var tr = doc.createElement('tr');
       var values = [pathLabel(row.kind), row.date || new Date((row.timestamp || 0) * 1000).toLocaleString(),
-        outcome(row), historyMbps(row, 'download'), historyMbps(row, 'upload'),
+        row.location || '—', outcome(row), historyMbps(row, 'download'), historyMbps(row, 'upload'),
         row.ping_ms != null ? metric(row.ping_ms) + ' ms' : row.latency != null ? metric(row.latency) + ' ms' : '—'];
       values.forEach(function(value, index) {
-        var className = index === 0 ? 'mode-badge ' + row.kind : index === 2 ? 'outcome ' + (row.outcome === 'error' || row.outcome === 'failed' ? 'failed' : row.outcome || 'success') : '';
+        var className = index === 0 ? 'mode-badge ' + row.kind : index === 3 ? 'outcome ' + (row.outcome === 'error' || row.outcome === 'failed' ? 'failed' : row.outcome || 'success') : '';
         add(doc, tr, 'td', value, className);
       });
       var actionCell = doc.createElement('td');
