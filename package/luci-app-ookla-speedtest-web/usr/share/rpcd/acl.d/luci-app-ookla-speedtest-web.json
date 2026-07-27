@@ -3,7 +3,7 @@
     "description": "Ookla speedtest web access",
     "read": {
       "ubus": {
-        "ookla-speedtest-web": ["status", "servers", "history"]
+        "ookla-speedtest-web": ["status", "servers", "network_info", "history"]
       },
       "uci": ["ookla-speedtest-webd"]
     },

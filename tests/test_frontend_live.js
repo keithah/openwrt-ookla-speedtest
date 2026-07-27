@@ -63,7 +63,7 @@ async function flushUntil(predicate) {
 }
 
 function harness(handler, options) {
-  const ids = ['live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-needle', 'gauge-value', 'gauge-unit',
+  const ids = ['live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
     'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
     'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
     'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
@@ -75,8 +75,8 @@ function harness(handler, options) {
   nodes['live-announcer'].setAttribute('data-throttle-ms', '1000');
   const latency = new FakeNode();
   const scaleLabels = Array.from({ length: 5 }, () => new FakeNode());
-  let ready, rafId = 0;
-  const rafs = new Map(), documentListeners = {};
+  let ready;
+  const documentListeners = {};
   const document = {
     visibilityState: 'visible',
     activeElement: null,
@@ -92,23 +92,26 @@ function harness(handler, options) {
   Object.values(nodes).forEach(node => { node.ownerDocument = document; });
   const timers = new FakeTimers();
   const calls = [];
-  const adapter = { call(method, params) { calls.push({ method, params, at: timers.now }); return handler(method, params, calls, timers); } };
+  const adapter = {
+    call(method, params) {
+      if (method === 'network_info' && !(options && options.networkInfo)) return Promise.resolve({ ok: false, error: { code: 'terms_required' } });
+      calls.push({ method, params, at: timers.now });
+      if (method === 'network_info') return Promise.resolve(options.networkInfo(params));
+      return handler(method, params, calls, timers);
+    }
+  };
   const window = {
     SpeedtestWebAdapter: adapter,
     SpeedtestWebLocalConfig: options && options.local,
-    requestAnimationFrame(callback) { rafs.set(++rafId, callback); return rafId; },
-    cancelAnimationFrame(id) { rafs.delete(id); },
-    matchMedia() { return { matches: !!(options && options.reducedMotion), addEventListener() {} }; }
+    matchMedia() { return { matches: false, addEventListener() {} }; }
   };
   const FakeDate = { now: () => timers.now };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), {
     window, document, SpeedtestGauge, SpeedtestResults, SpeedtestViews, Promise, performance: { now: () => timers.now }, Date: FakeDate,
-    requestAnimationFrame: window.requestAnimationFrame, cancelAnimationFrame: window.cancelAnimationFrame,
     setTimeout: timers.setTimeout.bind(timers), clearTimeout: timers.clearTimeout.bind(timers)
   });
   return {
-    app: window.SpeedtestWeb, calls, document, nodes, modeButtons, viewButtons, ready, timers,
-    stepFrame(at) { const callbacks = [...rafs.values()]; rafs.clear(); callbacks.forEach(fn => fn(at)); }
+    app: window.SpeedtestWeb, calls, document, nodes, modeButtons, viewButtons, ready, timers, window
   };
 }
 
@@ -1636,21 +1639,81 @@ async function testSettingsControlsSaveAndUseValidatedResponse() {
   assert.equal(h.app.state.settings.motion, 'reduced');
 }
 
-async function testMotionPreferenceAlwaysYieldsToBrowserAccessibility() {
-  for (const scenario of [
-    { motion: 'reduced', browser: false, immediate: true },
-    { motion: 'full', browser: true, immediate: true },
-    { motion: 'full', browser: false, immediate: false }
-  ]) {
-    const h = harness(method => method === 'settings'
-      ? Promise.resolve({ ok: true, default_mode: 'router-internet', server_id: '', history_retention: 100, motion: scenario.motion, terms_accepted: true })
-      : Promise.resolve({ ok: true, items: [] }), { reducedMotion: scenario.browser });
-    h.ready(); await flush();
-    h.app.state.activeJob = 'motion-job';
-    h.app.applyLiveStatus(status('motion-job', { phase: 'download', progress: .5, download_mbps: 100 }), 'motion-job');
-    const target = 'rotate(' + SpeedtestGauge.angleFor(100, 'download') + 'deg)';
-    assert.equal(h.nodes['gauge-needle'].style.transform === target, scenario.immediate);
-  }
+async function testCompletedResultRendersAndSharesTheOoklaUrl() {
+  const shareUrl = 'https://www.speedtest.net/result/c/share-me';
+  const h = harness((method) => {
+    if (method === 'settings') return Promise.resolve({ ok: true, terms_accepted: true });
+    if (method === 'start_live') return Promise.resolve({ ok: true, job_id: 'share-job' });
+    if (method === 'live_status') return Promise.resolve(status('share-job', {
+      state: 'complete', phase: 'complete', progress: 1, download_mbps: 100, upload_mbps: 20, ping_ms: 8,
+      result: { download: { bandwidth: 12500000 }, upload: { bandwidth: 2500000 }, ping: { latency: 8 }, packetLoss: 0,
+        isp: 'Example ISP', interface: { name: 'wan' }, server: { id: 42, name: 'Example Server' },
+        network_context: { note: 'Direct' }, result: { id: 'share-me', url: shareUrl } }
+    }));
+    if (method === 'history') return Promise.resolve({ ok: true, items: [] });
+    throw new Error('unexpected ' + method);
+  });
+  h.ready();
+  await h.app.runMode('router-internet');
+  assert.equal(h.app.state.results.internet.share_url, shareUrl);
+  h.app.render();
+  const shareButtons = h.nodes.results.children[0].children.filter(node => node.getAttribute('data-share-url'));
+  assert.equal(shareButtons.length, 1);
+  const button = shareButtons[0];
+  assert.equal(button.getAttribute('data-share-url'), shareUrl);
+  const clickShareButton = () => h.nodes.results.listeners.click.call(h.nodes.results, { target: button });
+
+  let sharedWith = null;
+  h.window.navigator = { share: (payload) => { sharedWith = payload; return Promise.resolve(); } };
+  clickShareButton();
+  assert.deepEqual(sharedWith, { title: 'Speedtest result', url: shareUrl }, 'navigator.share is preferred when available');
+
+  let copied = null;
+  h.window.navigator = { clipboard: { writeText: (text) => { copied = text; return Promise.resolve(); } } };
+  const originalText = button.textContent;
+  clickShareButton();
+  await flush();
+  assert.equal(copied, shareUrl, 'falls back to clipboard when the Web Share API is unavailable');
+  assert.equal(button.textContent, 'Copied!', 'gives feedback on copy');
+  await h.timers.tick(1500);
+  assert.equal(button.textContent, originalText, 'restores the original label after the feedback window');
+}
+
+async function testNetworkPreviewPopulatesBeforeFirstRun() {
+  const preview = {
+    ok: true, isp: 'T-Mobile USA',
+    interface: { name: 'rmnet_mhi0' },
+    server: { id: 6199, name: 'Wowrack', location: 'Seattle, WA' },
+    network_context: { note: 'No VPN path detected; test reflects the router WAN path.' }
+  };
+  const h = harness(method => Promise.resolve({ ok: true, items: [] }), { networkInfo: () => preview });
+  h.ready();
+  await flush();
+  assert.equal(h.app.state.isp, 'T-Mobile USA', 'ISP is known before any test runs');
+  assert.equal(h.app.state.connection, 'rmnet_mhi0', 'connection is known before any test runs');
+  assert.equal(h.app.state.autoServer.name, 'Wowrack', 'auto-selected server preview is known before any test runs');
+  assert.equal(h.nodes['server-name'].textContent, 'Wowrack', 'the resolved server name replaces the literal Auto label');
+  assert.equal(h.nodes['isp-badge'].textContent, 'T-Mobile USA');
+  assert.equal(h.nodes['network-badge'].textContent, 'rmnet_mhi0');
+  assert.equal(h.calls.filter(call => call.method === 'network_info').length, 1, 'network_info is fetched once on startup');
+
+  const explicitPreview = {
+    ok: true, isp: 'T-Mobile USA',
+    interface: { name: 'rmnet_mhi0' },
+    server: { id: 6199, name: 'Wowrack', location: 'Seattle, WA' },
+    network_context: { note: 'No VPN path detected; test reflects the router WAN path.' }
+  };
+  const h2 = harness(
+    method => method === 'settings'
+      ? Promise.resolve({ ok: true, default_mode: 'router-internet', server_id: '6199', history_retention: 100, motion: 'system', terms_accepted: true })
+      : Promise.resolve({ ok: true, items: [] }),
+    { networkInfo: () => explicitPreview }
+  );
+  h2.ready();
+  await flush();
+  assert.equal(h2.app.state.server.id, '6199', 'explicit server selection is preserved');
+  assert.equal(h2.app.state.server.name, 'Wowrack', 'explicit server selection is resolved to its real name');
+  assert.equal(h2.app.state.autoServer, null, 'explicit selection does not populate the auto-server preview');
 }
 
 (async function main() {
@@ -1714,6 +1777,7 @@ async function testMotionPreferenceAlwaysYieldsToBrowserAccessibility() {
   await testDeferredCompletionHistoryDoesNotStealFocusFromRetest();
   await testDeferredCompletionHistoryDoesNotStealNavigationFocus();
   await testSettingsControlsSaveAndUseValidatedResponse();
-  await testMotionPreferenceAlwaysYieldsToBrowserAccessibility();
-  console.log('frontend live polling ok');
+  await testCompletedResultRendersAndSharesTheOoklaUrl();
+  await testNetworkPreviewPopulatesBeforeFirstRun();
+    console.log('frontend live polling ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -8,10 +8,10 @@ for(const [asset,attribute] of [['styles.css','href'],['gauge.js','src'],['resul
 assert.match(html,new RegExp(`<script src=["']gauge\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']results\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']views\\.js\\?v=${escapedVersion}["']><\\/script>\\s*<script src=["']app\\.js\\?v=${escapedVersion}["']><\\/script>`));
 for(const id of ['app-title','path-badge','nav-history','nav-analytics','nav-settings','nav-about',
   'mode-picker','metric-ping','metric-download','metric-upload','live-gauge','gauge-track',
-  'gauge-progress','gauge-needle','gauge-value','gauge-unit','network-context','server-picker',
+  'gauge-progress','gauge-value','gauge-unit','network-context','server-picker',
   'go-control','cancel-test','results']) assert.match(html,new RegExp(`id=["']${id}["']`));
 assert.match(html,/viewBox=["']0 0 286 286["']/);
-assert.match(html,/<path id=["']gauge-needle["'] class=["']gauge-needle["'] d=["']M133 143 L138 58 L148 143 Z["']/);
+assert.doesNotMatch(html,/id=["']gauge-needle["']/);
 assert.match(css,/\.gauge-shell\s*\{[^}]*width:\s*286px;[^}]*height:\s*286px/s);
 assert.match(css,/\.gauge-track[^}]*stroke-width:\s*23/);
 assert.doesNotMatch(html,/<circle[^>]+(?:hub|needle)/i);
@@ -37,7 +37,7 @@ assert.match(html,/id=["']gauge-dial["']/);assert.match(html,/id=["']gauge-reado
 assert.match(html,/Router\s*→\s*Internet/); assert.match(html,/Device\s*→\s*Router/);
 assert.match(js,/subscribe\s*\(/); assert.match(js,/navigate\s*\(/); assert.match(js,/call\s*\(/); assert.match(js,/textContent/); assert.doesNotMatch(js,/innerHTML/);
 assert.match(renderers,/textContent/); assert.doesNotMatch(renderers,/innerHTML/);
-assert.match(js,/function renderGauge\s*\(/); assert.match(js,/SpeedtestGauge\.angleFor/); assert.match(js,/SpeedtestGauge\.tracePath/);
+assert.match(js,/function renderGauge\s*\(/); assert.match(js,/SpeedtestGauge\.tracePath/); assert.doesNotMatch(js,/SpeedtestGauge\.angleFor/);
 assert.match(js,/function announceGauge\s*\(/); assert.match(js,/setTimeout\s*\(/);
 assert.match(js,/router.*internet|internet.*router/i); assert.match(css,/@media/); assert.match(css,/#0?4|navy|cyan/i);
 assert.match(css,/--cyan\s*:/); assert.match(css,/--violet\s*:/); assert.match(css,/:focus-visible/); assert.match(css,/@media\s*\(prefers-reduced-motion:\s*reduce\)/); assert.match(css,/@media\s*\(max-width:\s*640px\)/); assert.match(css,/grid-template-columns:\s*1fr/);
@@ -47,8 +47,7 @@ assert.match(css,/@media\s*\(max-width:\s*520px\)[\s\S]*\.metrics-strip\s*,\s*\.
 assert.match(css,/width:\s*min\(286px\s*,\s*calc\(100vw\s*-\s*56px\)\)/);
 assert.match(css,/(?:button|\.mode-picker button|\.server button)[^{]*\{[^}]*min-height:\s*44px/s);
 assert.match(css,/@media\s*\(max-width:\s*480px\)\s*\{[^}]*\.app-header\s*\{[^}]*flex-direction:\s*column;[^}]*align-items:\s*stretch;[^}]*\}\s*\.brand-lockup strong\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*\}\s*\.icon-nav\s*\{[^}]*flex-wrap:\s*wrap;[^}]*\}/s);
-assert.match(css,/\.gauge-needle\s*\{[^}]*transform-box:\s*view-box/);
-assert.doesNotMatch(html,/id=["']gauge-needle["'][^>]*\stransform=/);
+assert.doesNotMatch(css,/\.gauge-needle/);
 assert.match(css,/\.history-scroll\s*\{[^}]*overflow-x:\s*auto/s);
 assert.match(css,/\.history-scroll table\s*\{[^}]*min-width:/s);
 assert.match(js,/aria-pressed/);assert.match(js,/\.disabled\s*=/);

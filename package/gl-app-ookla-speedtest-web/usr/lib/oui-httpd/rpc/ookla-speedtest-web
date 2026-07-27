@@ -30,6 +30,7 @@ end
 
 function M.status(params) return invoke("status", params) end
 function M.servers(params) return invoke("servers", params) end
+function M.network_info(params) return invoke("network_info", params) end
 function M.start(params) return invoke("start", params, 130000) end
 function M.start_live(params) return invoke("start_live", params) end
 function M.live_status(params) return invoke("live_status", params) end

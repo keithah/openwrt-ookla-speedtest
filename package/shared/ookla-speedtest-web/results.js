@@ -83,6 +83,14 @@
     summary.className = 'network-summary';
     summary.textContent = networkSummary(result);
     section.appendChild(summary);
+    if (result.share_url) {
+      var share = doc.createElement('button');
+      share.type = 'button';
+      share.className = 'share-result';
+      share.textContent = 'Share result';
+      share.setAttribute('data-share-url', result.share_url);
+      section.appendChild(share);
+    }
     return section;
   }
 

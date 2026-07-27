@@ -68,6 +68,7 @@ def history_result(service, job_id, result):
         "download": result.get("download") or {},
         "upload": result.get("upload") or {},
         "isp": result.get("isp"),
+        "share_url": (result.get("result") or {}).get("url"),
         "outcome": "success",
     }
 

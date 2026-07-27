@@ -228,8 +228,8 @@ class PackageLayoutContractTests(unittest.TestCase):
         data = json.loads(acl.read_text())
         text = acl.read_text()
         self.assertNotIn('"*"', text)
-        self.assertNotRegex(text, r"network|0\.0\.0\.0|listen")
-        methods = {"status", "servers", "start", "start_live", "live_status", "cancel_live", "history", "delete_history", "clear_history", "settings", "save_settings", "begin_local", "cancel_local", "local_download", "local_upload", "record_local"}
+        self.assertNotRegex(text, r'"network"|0\.0\.0\.0|listen')
+        methods = {"status", "servers", "network_info", "start", "start_live", "live_status", "cancel_live", "history", "delete_history", "clear_history", "settings", "save_settings", "begin_local", "cancel_local", "local_download", "local_upload", "record_local"}
         blob = json.dumps(data)
         for method in methods:
             self.assertIn(method, blob)
@@ -240,7 +240,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertEqual(luci_object.group(1), rpcd_object)
         self.assertEqual(list(acl_data["read"]["ubus"]), [rpcd_object])
         self.assertEqual(list(acl_data["write"]["ubus"]), [rpcd_object])
-        self.assertEqual(acl_data["read"]["ubus"][rpcd_object], ["status", "servers", "history"])
+        self.assertEqual(acl_data["read"]["ubus"][rpcd_object], ["status", "servers", "network_info", "history"])
         self.assertEqual(acl_data["write"]["ubus"][rpcd_object], ["start", "start_live", "live_status", "cancel_live", "delete_history", "clear_history", "settings", "save_settings", "accept_terms", "begin_local", "cancel_local", "local_download", "local_upload", "record_local"])
 
     def test_rpcd_live_method_schemas_are_exact(self):

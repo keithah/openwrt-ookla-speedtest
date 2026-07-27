@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os,sys,json,time,subprocess,fcntl,re,tempfile,errno,signal
+import os,sys,json,time,subprocess,fcntl,re,tempfile,errno,signal,selectors
 run=os.environ.get('OOKLA_WEBD_RUN_DIR','/var/run/ookla-speedtest-webd'); hist=os.environ.get('OOKLA_WEBD_HISTORY','/etc/ookla-speedtest-webd/history.jsonl'); settingsfile=os.environ.get('OOKLA_WEBD_SETTINGS','/etc/ookla-speedtest-webd/settings.json'); binary=os.environ.get('OOKLA_SPEEDTEST_BIN','/usr/bin/speedtest'); maxout=1024*1024
 os.makedirs(run,exist_ok=True); os.makedirs(os.path.dirname(hist),exist_ok=True)
 jobsdir=os.path.join(run,'jobs'); os.makedirs(jobsdir,exist_ok=True)
@@ -66,6 +66,8 @@ statefile=os.path.join(run,'state.json')
 termsfile=os.environ.get('OOKLA_WEBD_TERMS',os.path.join(os.path.dirname(hist),'terms-accepted'))
 servercachefile=os.path.join(run,'servers-cache.json')
 _servers_cache=None; _servers_cache_at=0
+networkinfocachefile=os.path.join(run,'network-info-cache.json')
+_network_info_cache=None; _network_info_cache_at=0
 def atomic_write(path,data):
  d=os.path.dirname(path) or '.'; fd,tmp=tempfile.mkstemp(prefix='.tmp-',dir=d)
  try:
@@ -146,6 +148,41 @@ def network_context(result_isp=None):
  possible=bool(normalize(result_isp) and normalize(provider) and normalize(result_isp)!=normalize(provider))
  note=('Possible VPN/proxy path: the public test provider differs from the configured router WAN provider.' if possible else 'No VPN path detected; test reflects the router WAN path.')
  return {'vpn':False,'vpn_kind':None,'vpn_name':None,'possible_vpn':possible,'note':note}
+def network_preview(server_id):
+ cmd=[binary,'--accept-license','--format=jsonl','--progress=no']
+ if server_id is not None: cmd+=['--server-id',str(server_id)]
+ try: proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,start_new_session=True,bufsize=0)
+ except OSError: return None
+ event=None
+ try:
+  selector=selectors.DefaultSelector(); selector.register(proc.stdout,selectors.EVENT_READ)
+  os.set_blocking(proc.stdout.fileno(),False)
+  deadline=time.monotonic()+10; buffered=bytearray()
+  while time.monotonic()<deadline:
+   if not selector.select(0.2):
+    if proc.poll() is not None: break
+    continue
+   try: chunk=os.read(proc.stdout.fileno(),65536)
+   except BlockingIOError: continue
+   if not chunk: break
+   buffered.extend(chunk)
+   newline=buffered.find(b'\n')
+   if newline<0:
+    if len(buffered)>maxout: break
+    continue
+   try: candidate=parse_jsonl_record(bytes(buffered[:newline]))
+   except ValueError: candidate=None
+   if candidate and candidate.get('type')=='testStart': event=candidate
+   break
+ except Exception: pass
+ finally:
+  try: os.killpg(proc.pid,signal.SIGTERM)
+  except OSError: pass
+  try: proc.wait(timeout=2)
+  except Exception:
+   try: os.killpg(proc.pid,signal.SIGKILL); proc.wait(timeout=2)
+   except Exception: pass
+ return event
 def bandwidth_mbps(value): return round(float(value)*8/1_000_000,2)
 def clamp_progress(value): return max(0.0,min(1.0,float(value)))
 def parse_jsonl_record(record):
@@ -524,6 +561,24 @@ def main(req):
    return {'ok':True,'run_id':run_id,'state':'committed','item':rec}
   except Exception: return {'ok':False,'error':{'code':'storage_error'}}
   finally: unlock(lk)
+ if m=='network_info':
+  global _network_info_cache,_network_info_cache_at
+  sid=readsettings().get('server_id') or None
+  try:
+   c=json.load(open(networkinfocachefile))
+   if c.get('server_id')==sid and time.time()-float(c.get('timestamp',0))<30 and isinstance(c.get('info'),dict): return dict({'ok':True},**c['info'])
+  except Exception: pass
+  if _network_info_cache is not None and _network_info_cache.get('server_id')==sid and time.time()-_network_info_cache_at<30: return dict({'ok':True},**_network_info_cache['info'])
+  if not terms_accepted(): return {'ok':False,'error':{'code':'terms_required'}}
+  if active_live_run() or active_local_run(): return {'ok':False,'error':{'code':'busy'}}
+  event=network_preview(int(sid) if sid else None)
+  if not event: return {'ok':False,'error':{'code':'network_info_error'}}
+  info={'isp':event.get('isp'),'interface':event.get('interface'),'server':event.get('server')}
+  info['network_context']=network_context(info.get('isp'))
+  _network_info_cache={'server_id':sid,'info':info}; _network_info_cache_at=time.time()
+  try: atomic_write(networkinfocachefile,json.dumps({'server_id':sid,'timestamp':_network_info_cache_at,'info':info},separators=(',',':')))
+  except Exception: pass
+  return dict({'ok':True},**info)
  if m=='servers':
   global _servers_cache,_servers_cache_at
   try:

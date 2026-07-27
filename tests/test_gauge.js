@@ -9,38 +9,6 @@ const gauge = require(gaugePath);
 assert.deepEqual(gauge.labelsFor('download'), [0, 5, 10, 50, 100, 250, 500, 750, 1000]);
 assert.deepEqual(gauge.labelsFor('upload'), [0, 5, 10, 50, 100, 250, 500, 750, 1000]);
 assert.deepEqual(gauge.labelsFor('ping'), [0, 5, 10, 20, 50, 100, 250, 500]);
-assert.equal(gauge.angleFor(0, 'download'), -135);
-assert.equal(gauge.angleFor(5, 'download'), -101.25);
-assert.equal(gauge.angleFor(30, 'download'), -50.625);
-assert.equal(gauge.angleFor(1000, 'download'), 135);
-assert.equal(gauge.angleFor(2000, 'download'), 135);
-assert.equal(gauge.angleFor(20, 'ping'), -19.285714285714292);
-assert.equal(gauge.angleFor(-1, 'ping'), -135);
-assert.equal(gauge.angleFor(NaN, 'download'), -135);
-
-const frames = [];
-let now = 0;
-let queued = null;
-const animator = gauge.createAnimator(angle => frames.push(angle), {
-  now: () => now,
-  requestFrame: callback => { queued = callback; return 1; },
-  cancelFrame: () => { queued = null; },
-  reducedMotion: () => false
-});
-animator.jump(-135);
-animator.track(45);
-now = 100; queued(now);
-assert.ok(frames.at(-1) > -135 && frames.at(-1) < 45);
-animator.track(90); // retarget from the rendered angle, not the old endpoint
-now = 200; queued(now);
-assert.ok(frames.at(-1) > frames.at(-2) && frames.at(-1) < 90);
-now = 300; queued(now);
-assert.equal(frames.at(-1), 90);
-animator.reset();
-now = 550; queued(now);
-assert.ok(frames.at(-1) < 90 && frames.at(-1) > -135);
-now = 800; queued(now);
-assert.equal(frames.at(-1), -135);
 
 const shortTrace = [1, 2];
 assert.deepEqual(gauge.pushTrace(shortTrace, 3, 3), [1, 2, 3]);
@@ -71,6 +39,5 @@ for (const invalidMax of [0, -1, NaN, Infinity, -Infinity]) {
 const browser = {};
 vm.runInNewContext(fs.readFileSync(gaugePath, 'utf8'), browser);
 assert.equal(typeof browser.SpeedtestGauge.labelsFor, 'function');
-assert.equal(typeof browser.SpeedtestGauge.createAnimator, 'function');
 
 console.log('gauge model ok');

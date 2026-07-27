@@ -28,7 +28,7 @@ class FakeNode {
   addEventListener(name, fn) { this['on' + name] = fn; }
 }
 
-const ids = ['live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-needle', 'gauge-value', 'gauge-unit',
+const ids = ['live-gauge', 'gauge-dial', 'gauge-labels', 'gauge-readout', 'gauge-value', 'gauge-unit',
   'phase-label', 'primary-metrics', 'metric-download', 'metric-upload', 'metric-ping', 'metric-jitter',
   'metric-loss', 'download-trace', 'upload-trace', 'go-control', 'cancel-test', 'live-announcer',
   'route-label', 'scope-note', 'status', 'isp-badge', 'network-badge', 'vpn-callout', 'server-name',
@@ -38,8 +38,7 @@ const nodes = Object.fromEntries(ids.map(id => [id, new FakeNode()]));
 nodes['gauge-dial'].setAttribute('hidden', '');
 nodes['live-announcer'].setAttribute('data-throttle-ms', '1000');
 const latency = new FakeNode();
-let ready, rafId = 0, reducedMotion = false;
-const rafs = new Map();
+let ready, reducedMotion = false;
 const document = {
   visibilityState: 'visible',
   addEventListener(name, fn) { if (name === 'DOMContentLoaded') ready = fn; },
@@ -105,6 +104,15 @@ assert.match(nestedLatencyResults, /Idle latency 11\.554 ms/);
 assert.match(nestedLatencyResults, /Download latency 27\.932 ms/);
 assert.match(nestedLatencyResults, /Upload latency 39\.411 ms/);
 assert.doesNotMatch(nestedLatencyResults, /\[object Object\]/);
+assert.doesNotMatch(nestedLatencyResults, /Share result/);
+
+Results.render(nodes.results, 'router-internet', {
+  internet: { download_mbps: 100, upload_mbps: 20, ping_ms: 8, share_url: 'https://www.speedtest.net/result/c/example' }
+});
+const shareButtons = nodes.results.children[0].children.filter(node => node.getAttribute('data-share-url'));
+assert.equal(shareButtons.length, 1, 'a completed result with a share URL renders exactly one share button');
+assert.equal(shareButtons[0].textContent, 'Share result');
+assert.equal(shareButtons[0].getAttribute('data-share-url'), 'https://www.speedtest.net/result/c/example');
 
 let opened = null;
 Views.render(nodes.view, 'history', {
@@ -149,19 +157,14 @@ Views.render(nodes.view, 'about', {}, {});
 assert.equal(nodeText(nodes.view).replace(/^About\s+/, ''),
   "OpenWrt Ookla Speedtest (Unofficial) runs Router → Internet tests on the router through the separately installed Ookla CLI. The web packages do not contain the Ookla binary. Device → Router measures this browser's authenticated path to the router, not the public internet. GoodCloud opens this same authenticated router interface; the package does not expose another public service.");
 const window = {
-  requestAnimationFrame(callback) { rafs.set(++rafId, callback); return rafId; },
-  cancelAnimationFrame(id) { rafs.delete(id); },
   matchMedia() { return { matches: reducedMotion, addEventListener() {} }; }
 };
 vm.runInNewContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), {
   window, document, SpeedtestGauge, SpeedtestResults: Results, SpeedtestViews: Views, Promise,
-  performance: { now: () => frameNow }, Date, setTimeout, clearTimeout,
-  requestAnimationFrame: window.requestAnimationFrame, cancelAnimationFrame: window.cancelAnimationFrame
+  performance: { now: () => 0 }, Date, setTimeout, clearTimeout
 });
 
 const app = window.SpeedtestWeb;
-let frameNow = 0;
-function stepFrame(at) { frameNow = at; const callbacks = [...rafs.values()]; rafs.clear(); callbacks.forEach(fn => fn(at)); }
 ready();
 app.render();
 assert.equal(nodes['server-picker'].attributes['aria-label'], 'Change server');
@@ -206,23 +209,12 @@ assert.equal(nodes['metric-ping'].textContent, '8.4');
 assert.equal(nodes['download-trace'].attributes.d, SpeedtestGauge.tracePath([10, 30, 50], 1000));
 assert.equal(nodes['upload-trace'].attributes.d, '');
 assert.deepEqual(nodes['gauge-labels'].children.map(node => node.textContent), SpeedtestGauge.labelsFor('download').map(String));
-assert.equal(nodes['gauge-needle'].style.transform, 'rotate(-135deg)', 'render alone does not invent a needle sample');
 assert.equal(nodes['live-gauge'].attributes['data-shape'], 'arc');
 assert.equal(nodes['metric-download'].attributes['aria-current'], 'true');
 assert.equal(nodes['live-gauge'].style.values['--gauge-progress'], '25');
 
 app.applyLocalSample('download', 50);
-assert.equal(nodes['gauge-needle'].style.transform, 'rotate(-135deg)', 'a real sample does not jump instantly');
-stepFrame(100);
-const halfwayAngle = parseFloat(nodes['gauge-needle'].style.transform.slice(7));
-assert.ok(halfwayAngle > -135 && halfwayAngle < SpeedtestGauge.angleFor(50, 'download'));
-stepFrame(200);
-assert.equal(nodes['gauge-needle'].style.transform, 'rotate(' + SpeedtestGauge.angleFor(50, 'download') + 'deg)');
-
 app.applyLocalSample('download', 100);
-stepFrame(250);
-const retargetedAngle = parseFloat(nodes['gauge-needle'].style.transform.slice(7));
-assert.ok(retargetedAngle > SpeedtestGauge.angleFor(50, 'download'), 'retarget starts from the displayed angle');
 
 Object.assign(app.state, { phase: 'upload', progress: 60, gaugeValue: 100, upload: 42.75, traces: { download: [10, 30, 50], upload: [20] } });
 app.render();
@@ -232,10 +224,6 @@ assert.equal(nodes['phase-label'].textContent, 'Upload');
 assert.equal(nodes['phase-announcer'].textContent, 'Upload phase');
 assert.equal(nodes['metric-upload'].textContent, '42.75');
 assert.equal(nodes['upload-trace'].attributes.d, SpeedtestGauge.tracePath([20, 42.75], 1000));
-stepFrame(750);
-assert.equal(nodes['gauge-needle'].style.transform, 'rotate(-135deg)', 'phase change resets over 500 ms');
-stepFrame(950);
-assert.equal(nodes['gauge-needle'].style.transform, 'rotate(' + SpeedtestGauge.angleFor(42.75, 'upload') + 'deg)', 'newest phase sample retargets after reset');
 assert.equal(nodes['metric-download'].attributes['aria-current'], undefined, 'completed metric remains visible but inactive');
 assert.equal(nodes['metric-upload'].attributes['aria-current'], 'true');
 
@@ -275,6 +263,6 @@ reducedMotion = true;
 Object.assign(app.state, { status: 'running', phase: 'download' });
 app.render();
 app.applyLocalSample('download', 250);
-assert.equal(nodes['gauge-needle'].style.transform, 'rotate(' + SpeedtestGauge.angleFor(250, 'download') + 'deg)', 'reduced motion jumps immediately');
+assert.equal(nodes['metric-download'].textContent, '250');
 
 console.log('frontend render ok');
