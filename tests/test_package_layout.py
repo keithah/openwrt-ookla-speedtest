@@ -64,7 +64,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         self.assertRegex(makefile, r"(?m)^PKG_VERSION:=1\.3\.0$")
         self.assertRegex(makefile, r"(?m)^PKG_RELEASE:=1$")
         self.assertRegex(makefile, r"PKGARCH\s*:=\s*all")
-        self.assertNotRegex(makefile, r"(?i)(wget|curl|https?://|Build/Compile.*download)")
+        self.assertNotRegex(makefile, r"(?i)(?<!\+)\b(wget|curl)\b|https?://|Build/Compile.*download")
 
     def test_package_metadata_and_modes(self):
         makefile = (PACKAGE / "Makefile").read_text()
@@ -72,7 +72,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         release = re.search(r"(?m)^PKG_RELEASE:=(\S+)$", makefile).group(1)
         expected_version = f"{version}-{release}"
         controls = {
-            "ookla-speedtest-webd": ("ookla-speedtest-cli", "python3-light"),
+            "ookla-speedtest-webd": ("ookla-speedtest-cli", "python3-light", "curl"),
             "luci-app-ookla-speedtest-web": ("ookla-speedtest-webd", "luci-base", "rpcd", "luci-theme-bootstrap"),
             "gl-app-ookla-speedtest-web": ("luci-app-ookla-speedtest-web",),
         }
