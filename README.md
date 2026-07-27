@@ -6,6 +6,8 @@ LuCI or GL.iNet Applications experience. The interface offers separate
 measurements, plus a **Both** action that runs them together and maps the two
 paths separately in results, history, and analytics.
 
+![Real Router to Internet speed test running in the GL.iNet application](docs/screenshots/speedtest-demo.gif)
+
 These screenshots are from the package running inside the GL.iNet Applications
 view on a real router:
 
