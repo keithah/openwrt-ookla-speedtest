@@ -156,15 +156,15 @@ def network_context(result_isp=None):
  # the router (e.g. Tailscale running for remote admin access while a
  # different tunnel/VPN is the one actually routing this test).
  if route_dev=='tailscale0': kind='tailscale-exit'; name='Tailscale'
- elif route_dev and route_dev.startswith('speedify'): kind='speedify'; name='Speedify'
+ elif route_dev and route_dev.startswith(('speedify','connectify')): kind='speedify'; name='Speedify'
  elif route_dev and route_dev.startswith('wg'): kind='wireguard'; name='WireGuard'
  elif route_dev and route_dev.startswith(('tun','tap')): kind='openvpn'; name='OpenVPN'
- elif route_dev and (route_dev=='zt0' or route_dev.startswith(('vpn','vti','ipsec','connectify')) or 'tunnel' in route_dev): kind='tunnel'; name='VPN tunnel'
+ elif route_dev and (route_dev=='zt0' or route_dev.startswith(('vpn','vti','ipsec')) or 'tunnel' in route_dev): kind='tunnel'; name='VPN tunnel'
  elif any(n.startswith('tailscale') for n in lower_names) or 'tailscaled' in processes: kind='tailscale'; name='Tailscale'
- elif any(n.startswith('speedify') for n in lower_names) or 'speedify' in processes: kind='speedify'; name='Speedify'
+ elif any(n.startswith(('speedify','connectify')) for n in lower_names) or 'speedify' in processes: kind='speedify'; name='Speedify'
  elif any(n.startswith('wg') for n in lower_names): kind='wireguard'; name='WireGuard'
  elif any(n.startswith(('tun','tap')) for n in lower_names) or 'openvpn' in processes: kind='openvpn'; name='OpenVPN'
- elif any(n=='zt0' or n.startswith(('vpn','vti','ipsec','connectify')) or 'tunnel' in n for n in lower_names): kind='tunnel'; name='VPN tunnel'
+ elif any(n=='zt0' or n.startswith(('vpn','vti','ipsec')) or 'tunnel' in n for n in lower_names): kind='tunnel'; name='VPN tunnel'
  labels={
   'tailscale-exit':'Test reflects router traffic through a Tailscale exit node.',
   'tailscale':'Test reflects router traffic through Tailscale.',
@@ -189,10 +189,12 @@ def classify_connection(name):
  if re.match(r'^(wlan|ra\d|rai\d|mesh|ath|wl)',name): return 'Wi-Fi'
  if re.match(r'^(wg|tun|tap|tailscale|zt|ipsec|vpn|vti|connectify)',name): return 'VPN'
  return None
-def connection_label(interface_name,vpn):
+def connection_label(interface_name,context):
+ context=context or {}
  kind=classify_connection(interface_name)
- if kind=='VPN': return 'VPN'
- if vpn: return (kind or 'Connection')+' (VPN)'
+ if context.get('vpn'):
+  vpn_name=context.get('vpn_name') or 'VPN'
+  return vpn_name if kind=='VPN' or not kind else kind+' ('+vpn_name+')'
  return kind or interface_name or 'Connection'
 def network_preview(server_id):
  cmd=[binary,'--accept-license','--format=jsonl','--progress=no']
@@ -621,7 +623,7 @@ def main(req):
   if not event: return {'ok':False,'error':{'code':'network_info_error'}}
   info={'isp':event.get('isp'),'interface':event.get('interface'),'server':event.get('server')}
   info['network_context']=network_context(info.get('isp'))
-  info['connection_label']=connection_label((info.get('interface') or {}).get('name'),info['network_context']['vpn'])
+  info['connection_label']=connection_label((info.get('interface') or {}).get('name'),info['network_context'])
   _network_info_cache={'server_id':sid,'info':info}; _network_info_cache_at=time.time()
   try: atomic_write(networkinfocachefile,json.dumps({'server_id':sid,'timestamp':_network_info_cache_at,'info':info},separators=(',',':')))
   except Exception: pass
@@ -666,7 +668,7 @@ def main(req):
   writehist(items)
   writestate({'state':'result','result':result,'finished':int(time.time())})
   result['network_context']=network_context(result.get('isp'))
-  result['connection_label']=connection_label((result.get('interface') or {}).get('name'),result['network_context']['vpn'])
+  result['connection_label']=connection_label((result.get('interface') or {}).get('name'),result['network_context'])
   result['location']=location
   return {'ok':True,'result':result}
  except Exception as e:

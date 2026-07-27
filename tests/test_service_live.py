@@ -305,9 +305,29 @@ class ServiceLiveTests(unittest.TestCase):
         ), mock.patch.object(self.mod.subprocess, "call", return_value=0):
             context = self.mod.network_context()
 
-        self.assertEqual(context["vpn_kind"], "tunnel")
+        # connectify0 is Speedify's own tunnel interface, so it is identified
+        # by name rather than falling back to a generic "tunnel" label.
+        self.assertEqual(context["vpn_kind"], "speedify")
+        self.assertEqual(context["vpn_name"], "Speedify")
         self.assertTrue(context["vpn"])
         self.assertNotIn("Tailscale", context["note"])
+
+    def test_unrecognized_route_confirmed_tunnel_reports_generically(self):
+        def check_output(command, **_kwargs):
+            if command == ["ip", "-o", "link", "show"]:
+                return "1: vpn0: <UP>\n"
+            if command == ["ip", "route", "get", "1.1.1.1"]:
+                return "1.1.1.1 dev vpn0 src 10.0.0.2\n"
+            self.fail("unexpected command: %r" % (command,))
+
+        with mock.patch.object(
+            self.mod.subprocess, "check_output", side_effect=check_output
+        ), mock.patch.object(self.mod.subprocess, "call", return_value=1):
+            context = self.mod.network_context()
+
+        self.assertEqual(context["vpn_kind"], "tunnel")
+        self.assertEqual(context["vpn_name"], "VPN tunnel")
+        self.assertTrue(context["vpn"])
 
     def test_network_context_warns_only_on_different_nonempty_isp_evidence(self):
         cases = [
@@ -356,14 +376,37 @@ class ServiceLiveTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(self.mod.classify_connection(name), expected)
 
-    def test_connection_label_combines_classification_and_vpn_flag(self):
-        self.assertEqual(self.mod.connection_label("rmnet_mhi0", False), "Cellular")
-        self.assertEqual(self.mod.connection_label("eth0", True), "Ethernet (VPN)")
-        self.assertEqual(self.mod.connection_label("tailscale0", True), "VPN")
-        self.assertEqual(self.mod.connection_label("tailscale0", False), "VPN")
-        self.assertEqual(self.mod.connection_label("mystery0", False), "mystery0")
-        self.assertEqual(self.mod.connection_label("mystery0", True), "Connection (VPN)")
-        self.assertEqual(self.mod.connection_label(None, False), "Connection")
+    def test_connection_label_combines_classification_and_vpn_name(self):
+        no_vpn = {"vpn": False}
+        self.assertEqual(self.mod.connection_label("rmnet_mhi0", no_vpn), "Cellular")
+        self.assertEqual(self.mod.connection_label("mystery0", no_vpn), "mystery0")
+        self.assertEqual(self.mod.connection_label(None, no_vpn), "Connection")
+
+        # The specific VPN service name is always preferred over a generic label.
+        self.assertEqual(
+            self.mod.connection_label("rmnet_mhi0", {"vpn": True, "vpn_name": "Tailscale"}),
+            "Cellular (Tailscale)",
+        )
+        self.assertEqual(
+            self.mod.connection_label("eth0", {"vpn": True, "vpn_name": "WireGuard"}),
+            "Ethernet (WireGuard)",
+        )
+        # The interface itself IS the VPN (its "medium" classification is just
+        # "VPN"), so the name is shown alone instead of the redundant "VPN (Speedify)".
+        self.assertEqual(
+            self.mod.connection_label("connectify0", {"vpn": True, "vpn_name": "Speedify"}),
+            "Speedify",
+        )
+        self.assertEqual(
+            self.mod.connection_label("tailscale0", {"vpn": True, "vpn_name": "Tailscale"}),
+            "Tailscale",
+        )
+        # A confirmed VPN with no specific name known still says so, generically.
+        self.assertEqual(
+            self.mod.connection_label("mystery0", {"vpn": True, "vpn_name": None}),
+            "VPN",
+        )
+        self.assertEqual(self.mod.connection_label("mystery0", None), "mystery0")
 
     def _clear_location_cache(self):
         try:

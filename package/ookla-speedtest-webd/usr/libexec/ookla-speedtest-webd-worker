@@ -239,7 +239,7 @@ def run(job_id, server_id):
         else:
             result["network_context"] = service.network_context(result.get("isp"))
             result["connection_label"] = service.connection_label(
-                (result.get("interface") or {}).get("name"), result["network_context"]["vpn"]
+                (result.get("interface") or {}).get("name"), result["network_context"]
             )
             result["location"] = service.location_for_ip((result.get("interface") or {}).get("externalIp"))
             state.update(
