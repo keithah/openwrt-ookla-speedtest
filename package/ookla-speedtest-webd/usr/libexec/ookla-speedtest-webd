@@ -5,10 +5,13 @@ os.makedirs(run,exist_ok=True); os.makedirs(os.path.dirname(hist),exist_ok=True)
 jobsdir=os.path.join(run,'jobs'); os.makedirs(jobsdir,exist_ok=True)
 localjobsdir=os.path.join(run,'local-jobs'); os.makedirs(localjobsdir,exist_ok=True)
 worker=os.environ.get('OOKLA_WEBD_WORKER',os.path.join(os.path.dirname(os.path.realpath(__file__)),'ookla-speedtest-webd-worker'))
-DEFAULT_SETTINGS={'default_mode':'router-internet','server_id':'','history_retention':100,'motion':'system'}
+DEFAULT_SETTINGS={'default_mode':'router-internet','server_id':'','history_retention':100,'motion':'system','schedule_hours':0}
 ALLOWED_MODES=('router-internet','device-router','both')
 ALLOWED_RETENTION=(25,50,100,250)
 ALLOWED_MOTION=('system','full','reduced')
+ALLOWED_SCHEDULE_HOURS=(0,1,3,6,12)
+cronfile=os.environ.get('OOKLA_WEBD_CRONFILE','/etc/crontabs/root')
+CRON_TAG='ookla-speedtest-webd-schedule'
 def out(x): print(json.dumps(x,separators=(',',':')))
 def new_id(): return os.urandom(16).hex()
 def startingfile(job_id): return os.path.join(jobsdir,job_id+'.starting')
@@ -91,8 +94,28 @@ def validate_settings(row):
    if not re.fullmatch(r'[0-9]+',retention_value): raise ValueError
    retention_value=int(retention_value)
   if retention_value not in ALLOWED_RETENTION: raise ValueError
-  return {'default_mode':mode,'server_id':server_id,'history_retention':retention_value,'motion':motion}
+  schedule_value=row['schedule_hours']
+  if isinstance(schedule_value,bool): raise ValueError
+  if isinstance(schedule_value,str):
+   if not re.fullmatch(r'[0-9]+',schedule_value): raise ValueError
+   schedule_value=int(schedule_value)
+  if schedule_value not in ALLOWED_SCHEDULE_HOURS: raise ValueError
+  return {'default_mode':mode,'server_id':server_id,'history_retention':retention_value,'motion':motion,'schedule_hours':schedule_value}
  except Exception: raise ValueError('invalid_settings')
+def apply_schedule(hours):
+ try:
+  lines=[]
+  if os.path.exists(cronfile):
+   with open(cronfile) as f: lines=[line for line in f.read().splitlines() if CRON_TAG not in line]
+  if hours:
+   lines.append('0 */%d * * * %s \'{"method":"start"}\' >/dev/null 2>&1 #%s'%(hours,os.path.realpath(__file__),CRON_TAG))
+  d=os.path.dirname(cronfile)
+  if d: os.makedirs(d,exist_ok=True)
+  atomic_write(cronfile,''.join(line+'\n' for line in lines))
+  try: subprocess.call(['/etc/init.d/cron','restart'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=5)
+  except Exception: pass
+  return True
+ except Exception: return False
 def readsettings():
  try:
   with open(settingsfile) as f: stored=json.load(f)
@@ -523,9 +546,11 @@ def main(req):
   lk=acquire_settings_lock()
   if isinstance(lk,tuple) and lk[0]=='storage_error': return {'ok':False,'error':{'code':'storage_error'}}
   try:
+   previous=readsettings()
    supplied={key:req[key] for key in DEFAULT_SETTINGS if key in req}
-   merged=validate_settings(dict(readsettings(),**supplied))
+   merged=validate_settings(dict(previous,**supplied))
    atomic_write(settingsfile,json.dumps(merged,separators=(',',':')))
+   if merged['schedule_hours']!=previous.get('schedule_hours'): apply_schedule(merged['schedule_hours'])
    return dict({'ok':True},**merged,terms_accepted=terms_accepted())
   except ValueError: return {'ok':False,'error':{'code':'invalid_settings'}}
   except Exception: return {'ok':False,'error':{'code':'storage_error'}}

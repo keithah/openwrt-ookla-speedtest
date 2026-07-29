@@ -120,6 +120,7 @@
     setting(doc, container, 'Server preference', settings.server_name || settings.server_id || state.server && (state.server.name || state.server.id));
     selectSetting(doc, container, 'Default mode', 'default_mode', settings.default_mode || 'router-internet', [['router-internet','Router → Internet'],['device-router','Device → Router'],['both','Both']], actions);
     selectSetting(doc, container, 'Retention', 'history_retention', settings.history_retention || 100, [[25,'25'],[50,'50'],[100,'100'],[250,'250']], actions);
+    selectSetting(doc, container, 'Automatic speedtest', 'schedule_hours', settings.schedule_hours || 0, [[0,'Off'],[1,'Every hour'],[3,'Every 3 hours'],[6,'Every 6 hours'],[12,'Every 12 hours']], actions);
     selectSetting(doc, container, 'Display options', 'motion', settings.motion || 'system', [['system','System'],['full','Full'],['reduced','Reduced']], actions);
     setting(doc, container, 'Terms status', settings.terms_accepted ? 'Accepted' : 'Not accepted');
   }

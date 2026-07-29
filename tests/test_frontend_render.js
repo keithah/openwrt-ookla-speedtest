@@ -126,9 +126,9 @@ Views.render(nodes.view, 'home', {}, { goHome() {} });
 assert.equal(nodes.view.children.length, 0, 'the home view never renders a back button or its own content');
 
 Views.render(nodes.view, 'settings', {
-  settings: { server_name: 'San Jose', history_retention: 50, motion: 'reduced', terms_accepted: true }
+  settings: { server_name: 'San Jose', history_retention: 50, motion: 'reduced', schedule_hours: 3, terms_accepted: true }
 }, {});
-for (const expected of ['Server preference', 'San Jose', 'Retention', '50', 'Display options', 'reduced', 'Terms status', 'Accepted']) {
+for (const expected of ['Server preference', 'San Jose', 'Retention', '50', 'Automatic speedtest', 'Every 3 hours', 'Display options', 'reduced', 'Terms status', 'Accepted']) {
   assert.match(nodeText(nodes.view), new RegExp(expected, 'i'));
 }
 

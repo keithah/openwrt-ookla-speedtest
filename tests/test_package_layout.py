@@ -61,7 +61,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             "gl-app-ookla-speedtest-web",
         ):
             self.assertIn("Package/" + package_name, makefile)
-        self.assertRegex(makefile, r"(?m)^PKG_VERSION:=1\.3\.0$")
+        self.assertRegex(makefile, r"(?m)^PKG_VERSION:=1\.4\.0$")
         self.assertRegex(makefile, r"(?m)^PKG_RELEASE:=1$")
         self.assertRegex(makefile, r"PKGARCH\s*:=\s*all")
         self.assertNotRegex(makefile, r"(?i)(?<!\+)\b(wget|curl)\b|https?://|Build/Compile.*download")
@@ -72,7 +72,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         release = re.search(r"(?m)^PKG_RELEASE:=(\S+)$", makefile).group(1)
         expected_version = f"{version}-{release}"
         controls = {
-            "ookla-speedtest-webd": ("ookla-speedtest-cli", "python3-light", "curl"),
+            "ookla-speedtest-webd": ("ookla-speedtest-cli", "python3-light", "curl", "cron"),
             "luci-app-ookla-speedtest-web": ("ookla-speedtest-webd", "luci-base", "rpcd", "luci-theme-bootstrap"),
             "gl-app-ookla-speedtest-web": ("luci-app-ookla-speedtest-web",),
         }
@@ -159,7 +159,7 @@ class PackageLayoutContractTests(unittest.TestCase):
         version_match = re.search(r"(?m)^PKG_VERSION:=(\S+)$", makefile)
         self.assertIsNotNone(version_match)
         version = version_match.group(1)
-        self.assertEqual("1.3.0", version)
+        self.assertEqual("1.4.0", version)
         html = (PACKAGE / "shared/ookla-speedtest-web/index.html").read_text()
         for asset, attribute in (
             ("styles.css", "href"),
@@ -252,7 +252,7 @@ class PackageLayoutContractTests(unittest.TestCase):
             text=True,
         )
         methods = json.loads(result.stdout)
-        self.assertEqual(methods["save_settings"], {"default_mode": "", "server_id": "", "history_retention": "", "motion": ""})
+        self.assertEqual(methods["save_settings"], {"default_mode": "", "server_id": "", "history_retention": "", "motion": "", "schedule_hours": ""})
         self.assertEqual(methods["start_live"], {"server_id": ""})
         self.assertEqual(methods["live_status"], {"job_id": ""})
         self.assertEqual(methods["cancel_live"], {"job_id": ""})
@@ -270,7 +270,7 @@ class PackageLayoutContractTests(unittest.TestCase):
     def test_luci_controller_declares_fixed_save_settings_parameters(self):
         controller = PACKAGE / "luci-app-ookla-speedtest-web/www/luci-static/resources/view/ookla-speedtest-web/main.js"
         text = controller.read_text()
-        self.assertRegex(text, r"save_settings:\['default_mode','server_id','history_retention','motion'\]")
+        self.assertRegex(text, r"save_settings:\['default_mode','server_id','history_retention','motion','schedule_hours'\]")
 
 
 if __name__ == "__main__":

@@ -1018,6 +1018,7 @@ class LocalRunLifecycleTests(unittest.TestCase):
             OOKLA_WEBD_RUN_DIR=str(self.run_dir),
             OOKLA_WEBD_HISTORY=str(self.history),
             OOKLA_WEBD_SETTINGS=str(self.etc_dir / "settings.json"),
+            OOKLA_WEBD_CRONFILE=str(self.etc_dir / "crontab-root"),
             OOKLA_LOCAL_RUN_LEASE="15",
             OOKLA_LOCAL_RUN_TTL="600",
         )
@@ -1240,6 +1241,56 @@ class LocalRunLifecycleTests(unittest.TestCase):
             )
 
         self.assertEqual(response, {"ok": False, "error": {"code": "storage_error"}})
+
+    def test_save_settings_rejects_unsupported_schedule_hours(self):
+        service = self.load_service("ookla_schedule_invalid")
+        response = service.main({"method": "save_settings", "schedule_hours": "5"})
+        self.assertEqual(response, {"ok": False, "error": {"code": "invalid_settings"}})
+
+    def test_save_settings_defaults_schedule_hours_off(self):
+        service = self.load_service("ookla_schedule_default")
+        response = service.main({"method": "settings"})
+        self.assertEqual(response["schedule_hours"], 0)
+        self.assertFalse(Path(service.cronfile).exists())
+
+    def test_save_settings_writes_cron_entry_for_chosen_interval(self):
+        service = self.load_service("ookla_schedule_write")
+        with mock.patch.object(service.subprocess, "call", return_value=0) as restart:
+            response = service.main({"method": "save_settings", "schedule_hours": "3"})
+        self.assertEqual(response["schedule_hours"], 3)
+        restart.assert_called_once_with(
+            ["/etc/init.d/cron", "restart"],
+            stdout=service.subprocess.DEVNULL,
+            stderr=service.subprocess.DEVNULL,
+            timeout=5,
+        )
+        contents = Path(service.cronfile).read_text()
+        self.assertIn("ookla-speedtest-webd-schedule", contents)
+        self.assertRegex(contents, r"^0 \*/3 \* \* \* .*ookla-speedtest-webd '\{\"method\":\"start\"\}'")
+
+    def test_save_settings_removes_cron_entry_when_schedule_disabled(self):
+        service = self.load_service("ookla_schedule_remove")
+        with mock.patch.object(service.subprocess, "call", return_value=0):
+            service.main({"method": "save_settings", "schedule_hours": "6"})
+            service.main({"method": "save_settings", "schedule_hours": "0"})
+        contents = Path(service.cronfile).read_text()
+        self.assertNotIn("ookla-speedtest-webd-schedule", contents)
+
+    def test_save_settings_preserves_unrelated_cron_entries(self):
+        service = self.load_service("ookla_schedule_preserve")
+        Path(service.cronfile).parent.mkdir(parents=True, exist_ok=True)
+        Path(service.cronfile).write_text("0 4 * * * /usr/bin/other-job\n")
+        with mock.patch.object(service.subprocess, "call", return_value=0):
+            service.main({"method": "save_settings", "schedule_hours": "1"})
+        contents = Path(service.cronfile).read_text()
+        self.assertIn("/usr/bin/other-job", contents)
+        self.assertIn("ookla-speedtest-webd-schedule", contents)
+
+    def test_save_settings_skips_cron_rewrite_when_schedule_unchanged(self):
+        service = self.load_service("ookla_schedule_unchanged")
+        with mock.patch.object(service, "apply_schedule") as apply_schedule:
+            service.main({"method": "save_settings", "motion": "reduced"})
+        apply_schedule.assert_not_called()
 
     def test_concurrent_compatibility_records_keep_both_newest_at_retention(self):
         service = self.load_service("ookla_compat_history_race")

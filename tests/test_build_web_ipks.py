@@ -45,12 +45,12 @@ class WebIpkBuilderTests(unittest.TestCase):
             packages = {path.name: members(path) for path in Path(output).glob("*.ipk")}
         self.assertEqual(3, len(packages))
         for name, (control, _, _, _) in packages.items():
-            self.assertIn("Version: 1.3.0-1", control, name)
+            self.assertIn("Version: 1.4.0-1", control, name)
             self.assertIn("Architecture: all", control, name)
-        self.assertIn("postinst", packages["luci-app-ookla-speedtest-web_1.3.0-1_all.ipk"][1])
-        luci = packages["luci-app-ookla-speedtest-web_1.3.0-1_all.ipk"][2]
-        glinet = packages["gl-app-ookla-speedtest-web_1.3.0-1_all.ipk"][2]
-        service = packages["ookla-speedtest-webd_1.3.0-1_all.ipk"][2]
+        self.assertIn("postinst", packages["luci-app-ookla-speedtest-web_1.4.0-1_all.ipk"][1])
+        luci = packages["luci-app-ookla-speedtest-web_1.4.0-1_all.ipk"][2]
+        glinet = packages["gl-app-ookla-speedtest-web_1.4.0-1_all.ipk"][2]
+        service = packages["ookla-speedtest-webd_1.4.0-1_all.ipk"][2]
         for filename in FRONTEND_ASSETS:
             self.assertIn("www/luci-static/resources/ookla-speedtest-web/" + filename, luci)
             self.assertIn("www/ookla-speedtest-web/" + filename, glinet)
@@ -83,9 +83,9 @@ class WebIpkBuilderTests(unittest.TestCase):
             right_packages = {path.name: path.read_bytes() for path in Path(right).glob("*.ipk")}
         self.assertEqual(
             {
-                "ookla-speedtest-webd_1.3.0-1_all.ipk",
-                "luci-app-ookla-speedtest-web_1.3.0-1_all.ipk",
-                "gl-app-ookla-speedtest-web_1.3.0-1_all.ipk",
+                "ookla-speedtest-webd_1.4.0-1_all.ipk",
+                "luci-app-ookla-speedtest-web_1.4.0-1_all.ipk",
+                "gl-app-ookla-speedtest-web_1.4.0-1_all.ipk",
             },
             set(left_packages),
         )

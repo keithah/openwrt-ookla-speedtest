@@ -7,7 +7,7 @@ cat > "$ROOT/bin/speedtest" <<'SH'
 printf '%s' '{"type":"result","ping":{"latency":12},"download":{"bandwidth":1000000},"upload":{"bandwidth":500000},"server":{"id":42,"name":"Test","sponsor":"Acme","location":"Town"},"isp":"ISP"}'
 SH
 chmod +x "$ROOT/bin/speedtest"
-export OOKLA_WEBD_RUN_DIR="$ROOT/run" OOKLA_WEBD_HISTORY="$ROOT/etc/history.jsonl" OOKLA_WEBD_SETTINGS="$ROOT/etc/settings.json" OOKLA_SPEEDTEST_BIN="$ROOT/bin/speedtest"
+export OOKLA_WEBD_RUN_DIR="$ROOT/run" OOKLA_WEBD_HISTORY="$ROOT/etc/history.jsonl" OOKLA_WEBD_SETTINGS="$ROOT/etc/settings.json" OOKLA_WEBD_CRONFILE="$ROOT/etc/crontab-root" OOKLA_SPEEDTEST_BIN="$ROOT/bin/speedtest"
 SVC=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd
 WORKER=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)/package/ookla-speedtest-webd/usr/libexec/ookla-speedtest-webd-worker
 [ "$(grep -c -- '--progress-update-interval=100' "$WORKER")" -eq 1 ]
@@ -27,9 +27,17 @@ printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"terms_accepted":false
 printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"default_mode":"router-internet"'
 printf '%s\n' '{"method":"save_settings","default_mode":"both","server_id":"42","history_retention":"50","motion":"full","unapproved":"discard-me"}' | "$SVC" | grep -q '"ok":true'
 printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"default_mode":"both"'
-python3 -c 'import json,os; row=json.load(open(os.environ["OOKLA_WEBD_SETTINGS"])); assert row == {"default_mode":"both","server_id":"42","history_retention":50,"motion":"full"}'
+python3 -c 'import json,os; row=json.load(open(os.environ["OOKLA_WEBD_SETTINGS"])); assert row == {"default_mode":"both","server_id":"42","history_retention":50,"motion":"full","schedule_hours":0}'
 printf '%s\n' '{"method":"save_settings","default_mode":"invalid"}' | "$SVC" | grep -q 'invalid_settings'
 printf '%s\n' '{"method":"save_settings","server_id":"123456789012345678901"}' | "$SVC" | grep -q 'invalid_settings'
+printf '%s\n' '{"method":"save_settings","schedule_hours":"5"}' | "$SVC" | grep -q 'invalid_settings'
+[ ! -e "$ROOT/etc/crontab-root" ]
+printf '%s\n' '{"method":"save_settings","schedule_hours":"3"}' | "$SVC" | grep -q '"schedule_hours":3'
+grep -q "ookla-speedtest-webd-schedule" "$ROOT/etc/crontab-root"
+grep -q '^0 \*/3 \* \* \*' "$ROOT/etc/crontab-root"
+printf '%s\n' '{"method":"settings"}' | "$SVC" | grep -q '"schedule_hours":3'
+printf '%s\n' '{"method":"save_settings","schedule_hours":"0"}' | "$SVC" | grep -q '"schedule_hours":0'
+! grep -q "ookla-speedtest-webd-schedule" "$ROOT/etc/crontab-root"
 printf '%s\n' '{"method":"start","server_id":"42"}' | "$SVC" | grep -q 'terms_required'
 printf '%s\n' '{"method":"accept_terms"}' | "$SVC" | grep -q '"ok":true'
 [ -f "$ROOT/etc/terms-accepted" ]

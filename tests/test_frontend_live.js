@@ -1619,27 +1619,30 @@ async function testDeferredCompletionHistoryDoesNotStealNavigationFocus() {
 }
 
 async function testSettingsControlsSaveAndUseValidatedResponse() {
-  let validated = { default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', terms_accepted: true };
+  let validated = { default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', schedule_hours: 0, terms_accepted: true };
   const h = harness((method, params) => {
-    if (method === 'save_settings') { validated = Object.assign({}, validated, params); validated.history_retention = Number(validated.history_retention); return Promise.resolve(Object.assign({ ok: true }, validated)); }
+    if (method === 'save_settings') { validated = Object.assign({}, validated, params); validated.history_retention = Number(validated.history_retention); validated.schedule_hours = Number(validated.schedule_hours); return Promise.resolve(Object.assign({ ok: true }, validated)); }
     return Promise.resolve({ ok: true, items: [] });
   });
   h.ready();
   await flush();
-  h.app.state.settings = { default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', terms_accepted: true };
+  h.app.state.settings = { default_mode: 'router-internet', server_id: '', history_retention: 100, motion: 'system', schedule_hours: 0, terms_accepted: true };
   h.app.state.view = 'settings';
   h.app.render();
   const mode = nodesWithAttribute(h.nodes.view, 'data-setting', 'default_mode')[0];
   const retention = nodesWithAttribute(h.nodes.view, 'data-setting', 'history_retention')[0];
+  const schedule = nodesWithAttribute(h.nodes.view, 'data-setting', 'schedule_hours')[0];
   const motion = nodesWithAttribute(h.nodes.view, 'data-setting', 'motion')[0];
   mode.value = 'both'; await mode.onchange();
   retention.value = '50'; await retention.onchange();
+  schedule.value = '6'; await schedule.onchange();
   motion.value = 'reduced'; await motion.onchange();
   assert.deepEqual(h.calls.filter(call => call.method === 'save_settings').map(call => call.params), [
-    { default_mode: 'both' }, { history_retention: '50' }, { motion: 'reduced' }
+    { default_mode: 'both' }, { history_retention: '50' }, { schedule_hours: '6' }, { motion: 'reduced' }
   ]);
   assert.equal(h.app.state.mode, 'both');
   assert.equal(h.app.state.settings.history_retention, 50);
+  assert.equal(h.app.state.settings.schedule_hours, 6);
   assert.equal(h.app.state.settings.motion, 'reduced');
 }
 

@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ookla-speedtest-web
-PKG_VERSION:=1.3.0
+PKG_VERSION:=1.4.0
 PKG_RELEASE:=1
 PKGARCH:=all
 
@@ -11,7 +11,7 @@ define Package/ookla-speedtest-webd
   SECTION:=net
   CATEGORY:=Network
   TITLE:=Ookla Speedtest web RPC helper
-  DEPENDS:=+ookla-speedtest-cli +python3-light +curl
+  DEPENDS:=+ookla-speedtest-cli +python3-light +curl +cron
 endef
 
 define Package/luci-app-ookla-speedtest-web
